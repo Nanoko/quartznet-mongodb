@@ -1,0 +1,5 @@
+<configuration>
+  <connectionStrings>
+    <add name="quartznet-mongodb" connectionString="server=localhost;database=quartznet;"/>
+  </connectionStrings>
+</configuration>

@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2010/07/nuspec.xsd">
+  <metadata>
+    <id>quartz.impl.mongodb</id>
+    <version>0.0.1</version>
+    <title>Quartz.NET on MongoDB (requires manual config)</title>
+    <authors>Renaud Calmont</authors>
+    <owners>Renaud Calmont</owners>
+    <licenseUrl>http://www.apache.org/licenses/LICENSE-2.0</licenseUrl>
+    <projectUrl>https://github.com/Nanoko/quartznet-mongodb</projectUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>Quartz.NET with configuration for getting started quickly on a MongoDB database as the job store. NB requires manual configuration.</description>
+    <summary>Quartz.NET with configuration for getting started quickly on a MongoDB database as the job store. NB requires manual configuration.</summary>
+    <language>en-US</language>
+    <tags>nosql quartz scheduler</tags>
+    <dependencies>
+      <dependency id="quartz" version="2.0" />
+      <dependency id="mongocsharpdriver" version="1.4" />
+    </dependencies>
+  </metadata>
+</package>

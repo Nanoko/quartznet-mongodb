@@ -1,0 +1,3 @@
+Please note that in order to complete the installation of Quartz.Impl.MongoDB you will have to do the following:
+
+1) Edit your web.config with the correct settings in the quartznet <connectionString> to connect to your database
