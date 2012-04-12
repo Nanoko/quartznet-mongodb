@@ -5,14 +5,15 @@ using System.Text;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson;
 using System.Reflection;
+using Quartz.Impl.Triggers;
 
 namespace Quartz.Impl.MongoDB
 {
-    public class JobDetailImplSerializer : IBsonSerializer
+    public class SimpleTriggerImplSerializer : IBsonSerializer
     {
         public object Deserialize(global::MongoDB.Bson.IO.BsonReader bsonReader, Type nominalType, Type actualType, IBsonSerializationOptions options)
         {
-            if (nominalType != typeof(JobDetailImpl) || actualType != typeof(JobDetailImpl))
+            if (nominalType != typeof(SimpleTriggerImpl) || actualType != typeof(SimpleTriggerImpl))
             {
                 var message = string.Format("Can't deserialize a {0} with {1}.", nominalType.FullName, this.GetType().Name);
                 throw new BsonSerializationException(message);
@@ -26,25 +27,40 @@ namespace Quartz.Impl.MongoDB
                 // Ignore _id
                 bsonReader.ReadString("_id");
 
-                Assembly assembly = Assembly.Load(bsonReader.ReadString("_assembly"));
-                Type type = assembly.GetType(bsonReader.ReadString("_class"));
+                // Ignore _t
+                bsonReader.ReadString("_t");
 
-                IJobDetail jobDetail = new JobDetailImpl(
+                Spi.IOperableTrigger trigger = new SimpleTriggerImpl(
                     bsonReader.ReadString("Name"),
                     bsonReader.ReadString("Group"),
-                    type,
-                    bsonReader.ReadBoolean("RequestRecovery"),
-                    bsonReader.ReadBoolean("Durable"));
+                    bsonReader.ReadString("JobName"),
+                    bsonReader.ReadString("JobGroup"),
+                    new DateTimeOffset(new DateTime(bsonReader.ReadInt64("StartDate"))),
+                    ReadNullableDateTimeOffset(bsonReader, "EndDate"),
+                    bsonReader.ReadInt32("RepeatCount"),
+                    new TimeSpan(bsonReader.ReadInt64("RepeatInterval")));
 
                 bsonReader.ReadBsonType();
-                jobDetail = jobDetail.GetJobBuilder()
-                    .UsingJobData((JobDataMap)BsonSerializer.Deserialize(bsonReader, typeof(JobDataMap)))
-                    .WithDescription(bsonReader.ReadString("Description"))
-                    .Build();
+                trigger.JobDataMap = (JobDataMap)BsonSerializer.Deserialize(bsonReader, typeof(JobDataMap));
+
+                bsonReader.ReadName("Description");
+                if (bsonReader.GetCurrentBsonType() == BsonType.String)
+                {
+                    trigger.Description = bsonReader.ReadString();
+                }
+                else
+                {
+                    bsonReader.ReadNull();
+                }
+
+                trigger.Priority = bsonReader.ReadInt32("Priority");
+
+                // Ignore State
+                bsonReader.ReadString("State");
 
                 bsonReader.ReadEndDocument();
 
-                return jobDetail;
+                return trigger;
             }
             else if (bsonType == BsonType.Null)
             {
@@ -56,6 +72,18 @@ namespace Quartz.Impl.MongoDB
                 var message = string.Format("Can't deserialize a {0} from BsonType {1}.", nominalType.FullName, bsonType);
                 throw new BsonSerializationException(message);
             }
+        }
+
+        private DateTimeOffset? ReadNullableDateTimeOffset(global::MongoDB.Bson.IO.BsonReader bsonReader, string name)
+        {
+            bsonReader.ReadName(name);
+            if (bsonReader.GetCurrentBsonType() == BsonType.DateTime)
+            {
+                return new DateTimeOffset(new DateTime(bsonReader.ReadInt64()));
+            }
+
+            bsonReader.ReadNull();
+            return null;
         }
 
         public object Deserialize(global::MongoDB.Bson.IO.BsonReader bsonReader, Type nominalType, IBsonSerializationOptions options)
@@ -85,23 +113,44 @@ namespace Quartz.Impl.MongoDB
 
         public void Serialize(global::MongoDB.Bson.IO.BsonWriter bsonWriter, Type nominalType, object value, IBsonSerializationOptions options)
         {
-            JobDetailImpl item = (JobDetailImpl)value;
+            SimpleTriggerImpl item = (SimpleTriggerImpl)value;
             bsonWriter.WriteStartDocument();
 
             bsonWriter.WriteString("_id", item.Key.ToString());
 
-            bsonWriter.WriteString("_assembly", item.JobType.Assembly.FullName);
-            bsonWriter.WriteString("_class", item.JobType.FullName);
+            bsonWriter.WriteString("_t", "SimpleTriggerImpl");
 
             bsonWriter.WriteString("Name", item.Name);
             bsonWriter.WriteString("Group", item.Group);
-            bsonWriter.WriteBoolean("RequestRecovery", item.RequestsRecovery);
-            bsonWriter.WriteBoolean("Durable", item.Durable);
+            bsonWriter.WriteString("JobName", item.JobName);
+            bsonWriter.WriteString("JobGroup", item.JobGroup);
+            bsonWriter.WriteInt64("StartDate", item.StartTimeUtc.UtcTicks);
+            if (item.EndTimeUtc != null)
+            {
+                bsonWriter.WriteInt64("EndDate", ((DateTimeOffset)item.EndTimeUtc).UtcTicks);
+            }
+            else
+            {
+                bsonWriter.WriteNull("EndDate");
+            }
+
+            bsonWriter.WriteInt32("RepeatCount", item.RepeatCount);
+            bsonWriter.WriteInt64("RepeatInterval", item.RepeatInterval.Ticks);
 
             bsonWriter.WriteName("JobDataMap");
             BsonSerializer.Serialize(bsonWriter, item.JobDataMap);
 
-            bsonWriter.WriteString("Description", item.Description);
+            if (item.Description != null)
+            {
+                bsonWriter.WriteString("Description", item.Description);
+            }
+            else
+            {
+                bsonWriter.WriteNull("Description");
+            }
+
+            bsonWriter.WriteInt32("Priority", item.Priority);
+            bsonWriter.WriteString("State", TriggerState.Normal.ToString());
 
             bsonWriter.WriteEndDocument();
         }

@@ -13,7 +13,7 @@ namespace Quartz.Impl.MongoDB
         {
             if (nominalType != typeof(JobDataMap) || actualType != typeof(JobDataMap))
             {
-                var message = string.Format("Can't deserialize a {0} from {1}.", nominalType.FullName, this.GetType().Name);
+                var message = string.Format("Can't deserialize a {0} with {1}.", nominalType.FullName, this.GetType().Name);
                 throw new BsonSerializationException(message);
             }
 

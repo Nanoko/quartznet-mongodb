@@ -55,10 +55,9 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="TriggerKeySerializer.cs" />
+    <Compile Include="SimpleTriggerImplSerializer.cs" />
     <Compile Include="JobDataMapSerializer.cs" />
     <Compile Include="JobDetailImplSerializer.cs" />
-    <Compile Include="JobKeySerializer.cs" />
     <Compile Include="JobStore.cs" />
     <Compile Include="KeyOrIdConvention.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

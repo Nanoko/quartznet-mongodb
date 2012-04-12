@@ -11,6 +11,7 @@ using MongoDB.Driver;
 using MongoDB.Driver.Builders;
 using System.Reflection;
 using MongoDB.Bson.Serialization.Conventions;
+using Quartz.Impl.Triggers;
 
 namespace Quartz.Impl.MongoDB
 {
@@ -66,11 +67,6 @@ namespace Quartz.Impl.MongoDB
             );
 
             BsonSerializer.RegisterSerializer(
-                typeof(JobKey),
-                new JobKeySerializer()
-            );
-
-            BsonSerializer.RegisterSerializer(
                 typeof(JobDetailImpl),
                 new JobDetailImplSerializer()
             );
@@ -81,9 +77,15 @@ namespace Quartz.Impl.MongoDB
             );
 
             BsonSerializer.RegisterSerializer(
-                typeof(TriggerKey),
-                new TriggerKeySerializer()
+                typeof(SimpleTriggerImpl),
+                new SimpleTriggerImplSerializer()
             );
+
+            BsonClassMap.RegisterClassMap<SimpleTriggerImpl>(cm =>
+                {
+                    cm.AutoMap();
+                    cm.SetDiscriminator("SimpleTriggerImpl");
+                });
         }
 
         private MongoCollection Calendars { get { return this._database.GetCollection("Calendars"); } }
@@ -170,7 +172,12 @@ namespace Quartz.Impl.MongoDB
 
         public Collection.ISet<string> GetPausedTriggerGroups()
         {
-            throw new NotImplementedException();
+            BsonJavaScript map = new BsonJavaScript("function(){emit(this.Group, this.State == \""+TriggerState.Paused.ToString()+"\");}");
+            BsonJavaScript reduce = new BsonJavaScript("function(key, values){var result = {isPaused: true};values.foreach(function(value){result.isPaused = result.isPaused && value;});return result;}");
+
+            var result = this.Triggers.MapReduce(map, reduce);
+            var groups = result.InlineResults.Where(r => r.GetElement("value").Value.AsBoolean == true).Select(r => r.GetElement("_id").Value.AsString);
+            return new Collection.HashSet<string>(groups);
         }
 
         public IList<string> GetTriggerGroupNames()
@@ -355,7 +362,7 @@ namespace Quartz.Impl.MongoDB
         public Spi.IOperableTrigger RetrieveTrigger(TriggerKey triggerKey)
         {
             return this.Triggers
-                .FindOneByIdAs<Spi.IOperableTrigger>(triggerKey.ToBsonDocument());
+                .FindOneByIdAs<Spi.IOperableTrigger>(triggerKey.ToString());
         }
 
         public void SchedulerPaused()
