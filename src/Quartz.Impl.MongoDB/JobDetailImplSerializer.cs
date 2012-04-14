@@ -23,23 +23,27 @@ namespace Quartz.Impl.MongoDB
             {
                 bsonReader.ReadStartDocument();
 
-                // Ignore _id
-                bsonReader.ReadString("_id");
-
+                BsonSerializer.Deserialize(bsonReader, typeof(JobKey));
+                bsonReader.ReadString("_t");
+                
                 Assembly assembly = Assembly.Load(bsonReader.ReadString("_assembly"));
-                Type type = assembly.GetType(bsonReader.ReadString("_class"));
-
+                Type jobType = assembly.GetType(bsonReader.ReadString("_class"));
+                
                 IJobDetail jobDetail = new JobDetailImpl(
                     bsonReader.ReadString("Name"),
                     bsonReader.ReadString("Group"),
-                    type,
+                    jobType,
                     bsonReader.ReadBoolean("RequestRecovery"),
                     bsonReader.ReadBoolean("Durable"));
 
                 bsonReader.ReadBsonType();
+                JobDataMap map = (JobDataMap)BsonSerializer.Deserialize(bsonReader, typeof(JobDataMap));
+                /*bsonReader.ReadBsonType();
+                string description = (string)BsonSerializer.Deserialize(bsonReader, typeof(string));*/
+
                 jobDetail = jobDetail.GetJobBuilder()
-                    .UsingJobData((JobDataMap)BsonSerializer.Deserialize(bsonReader, typeof(JobDataMap)))
-                    .WithDescription(bsonReader.ReadString("Description"))
+                    .UsingJobData(map)
+                    /*.WithDescription(description)*/
                     .Build();
 
                 bsonReader.ReadEndDocument();
@@ -88,8 +92,10 @@ namespace Quartz.Impl.MongoDB
             JobDetailImpl item = (JobDetailImpl)value;
             bsonWriter.WriteStartDocument();
 
-            bsonWriter.WriteString("_id", item.Key.ToString());
+            bsonWriter.WriteName("_id");
+            BsonSerializer.Serialize<JobKey>(bsonWriter, item.Key);
 
+            bsonWriter.WriteString("_t", "JobDetailImpl");
             bsonWriter.WriteString("_assembly", item.JobType.Assembly.FullName);
             bsonWriter.WriteString("_class", item.JobType.FullName);
 
@@ -101,7 +107,8 @@ namespace Quartz.Impl.MongoDB
             bsonWriter.WriteName("JobDataMap");
             BsonSerializer.Serialize(bsonWriter, item.JobDataMap);
 
-            bsonWriter.WriteString("Description", item.Description);
+            /*bsonWriter.WriteName("Description");
+            BsonSerializer.Serialize<string>(bsonWriter, item.Description);*/
 
             bsonWriter.WriteEndDocument();
         }

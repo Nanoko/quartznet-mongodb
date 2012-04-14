@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -7,29 +7,24 @@ using MongoDB.Bson;
 
 namespace Quartz.Impl.MongoDB
 {
-    public class JobDataMapSerializer : IBsonSerializer
+    public class DateTimeSerializer : IBsonSerializer
     {
         public object Deserialize(global::MongoDB.Bson.IO.BsonReader bsonReader, Type nominalType, Type actualType, IBsonSerializationOptions options)
         {
-            if (nominalType != typeof(JobDataMap) || actualType != typeof(JobDataMap))
+            if (nominalType != typeof(DateTime) || actualType != typeof(DateTime))
             {
-                var message = string.Format("Can't deserialize a {0} with {1}.", nominalType.FullName, this.GetType().Name);
+                var message = string.Format("Can't deserialize a {0} from {1}.", nominalType.FullName, this.GetType().Name);
                 throw new BsonSerializationException(message);
             }
 
             var bsonType = bsonReader.CurrentBsonType;
             if (bsonType == BsonType.Document)
             {
-                JobDataMap item = new JobDataMap();
+                DateTime item;
+                
                 bsonReader.ReadStartDocument();
-
-                while (bsonReader.ReadBsonType() != BsonType.EndOfDocument)
-                {
-                    string key = bsonReader.ReadName();
-                    object value = BsonSerializer.Deserialize<object>(bsonReader);
-                    item.Add(key, value);
-                }
-
+                item = new DateTime(
+                    bsonReader.ReadInt64("UtcTicks"));
                 bsonReader.ReadEndDocument();
 
                 return item;
@@ -73,15 +68,10 @@ namespace Quartz.Impl.MongoDB
 
         public void Serialize(global::MongoDB.Bson.IO.BsonWriter bsonWriter, Type nominalType, object value, IBsonSerializationOptions options)
         {
-            JobDataMap item = (JobDataMap)value;
-            bsonWriter.WriteStartDocument();
+            DateTime item = (DateTime)value;
 
-            foreach (string key in item.Keys)
-            {
-                bsonWriter.WriteName(key);
-                BsonSerializer.Serialize(bsonWriter, item[key]);
-            }
-            
+            bsonWriter.WriteStartDocument();
+            bsonWriter.WriteInt64("Ticks", item.Ticks);
             bsonWriter.WriteEndDocument();
         }
 

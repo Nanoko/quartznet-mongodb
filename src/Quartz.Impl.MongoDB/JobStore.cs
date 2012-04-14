@@ -12,6 +12,7 @@ using MongoDB.Driver.Builders;
 using System.Reflection;
 using MongoDB.Bson.Serialization.Conventions;
 using Quartz.Impl.Triggers;
+using MongoDB.Bson.Serialization.Options;
 
 namespace Quartz.Impl.MongoDB
 {
@@ -27,6 +28,7 @@ namespace Quartz.Impl.MongoDB
         private Spi.ISchedulerSignaler _signaler;
 		
         private static readonly object Sync = new object();
+        private static readonly TimeSpan _lockTimeout = new TimeSpan(0, 10, 0); // 10 minutes
 
         /// <summary>
 		/// Initializes a new instance of the <see cref="JobStore"/> class
@@ -53,17 +55,37 @@ namespace Quartz.Impl.MongoDB
                 this.Jobs.EnsureIndex(IndexKeys.Ascending("Group"));
 
                 this.Triggers.EnsureIndex(IndexKeys.Ascending("Group"));
-                this.Triggers.EnsureIndex(IndexKeys.Ascending("JobKey"));
+                this.Triggers.EnsureIndex(IndexKeys.Ascending("JobGroup"));
             }
 		}
 
         static JobStore()
         {
             var myConventions = new ConventionProfile();
-            myConventions.SetIdMemberConvention(new KeyOrIdConvention());
+            myConventions.SetIdMemberConvention(new IdOrKeyOrNameConvention());
             BsonClassMap.RegisterConventions(
                 myConventions,
                 t => true
+            );
+
+            BsonSerializer.RegisterSerializer(
+                typeof(DateTimeOffset),
+                new DateTimeOffsetSerializer()
+            );
+
+            BsonSerializer.RegisterSerializer(
+                typeof(DateTime),
+                new DateTimeSerializer()
+            );
+
+            BsonSerializer.RegisterSerializer(
+                typeof(JobKey),
+                new JobKeySerializer()
+            );
+
+            BsonSerializer.RegisterSerializer(
+                typeof(TriggerKey),
+                new TriggerKeySerializer()
             );
 
             BsonSerializer.RegisterSerializer(
@@ -71,30 +93,79 @@ namespace Quartz.Impl.MongoDB
                 new JobDetailImplSerializer()
             );
 
+            BsonClassMap.RegisterClassMap<JobDetailImpl>(cm =>
+            {
+                cm.AutoMap();
+                cm.SetDiscriminator("JobDetailImpl");
+            });
+
             BsonSerializer.RegisterSerializer(
                 typeof(JobDataMap),
                 new JobDataMapSerializer()
             );
 
-            BsonSerializer.RegisterSerializer(
-                typeof(SimpleTriggerImpl),
-                new SimpleTriggerImplSerializer()
-            );
+            BsonClassMap.RegisterClassMap<AbstractTrigger>(cm =>
+            {
+                cm.AutoMap();
+                cm.SetIsRootClass(true);
+            });
 
             BsonClassMap.RegisterClassMap<SimpleTriggerImpl>(cm =>
-                {
-                    cm.AutoMap();
-                    cm.SetDiscriminator("SimpleTriggerImpl");
-                });
+            {
+                cm.AutoMap();
+                cm.MapField("complete");
+                cm.MapField("nextFireTimeUtc");
+                cm.MapField("previousFireTimeUtc");
+            });
         }
 
         private MongoCollection Calendars { get { return this._database.GetCollection("Calendars"); } }
         private MongoCollection Jobs { get { return this._database.GetCollection("Jobs"); } }
         private MongoCollection Triggers { get { return this._database.GetCollection("Triggers"); } }
+        private MongoCollection TriggerLocks { get { return this._database.GetCollection("TriggerLocks"); } }
 
         public IList<Spi.IOperableTrigger> AcquireNextTriggers(DateTimeOffset noLaterThan, int maxCount, TimeSpan timeWindow)
         {
-            throw new NotImplementedException();
+            DateTimeOffset limit = DateTime.Now + timeWindow;
+            if (noLaterThan < limit)
+            {
+                limit = noLaterThan;
+            }
+
+            IList<Spi.IOperableTrigger> acquiredTriggers = new List<Spi.IOperableTrigger>();
+            
+            /*this.TriggerLocks.Remove(Query.LTE("Expires", DateTime.Now.Ticks));*/
+
+            var eligibleTriggers = this.Triggers
+                .FindAs<Spi.IOperableTrigger>(
+                    Query.And(
+                        Query.LTE("nextFireTimeUtc.Ticks", limit.DateTime.Ticks),
+                        Query.NE("State", TriggerState.Paused.ToString())));
+
+            /*foreach (Spi.IOperableTrigger trigger in eligibleTriggers)
+            {
+                BsonDocument triggerLock = new BsonDocument();
+                triggerLock.Add("_id", trigger.Key.ToBsonDocument());
+                triggerLock.Add("InstanceId", this._instanceId);
+                triggerLock.Add("Expires", (DateTime.Now + _lockTimeout).Ticks);
+
+                this.TriggerLocks.Insert<BsonDocument>(triggerLock);
+                var result = this.TriggerLocks.FindOneAs<BsonDocument>(
+                    Query.And(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                        Query.EQ("InstanceId", this._instanceId)));
+                if (!result.IsBsonNull)
+                {
+                    acquiredTriggers.Add(trigger);
+                }
+
+                if (acquiredTriggers.Count == maxCount) break;
+            }*/
+
+            return eligibleTriggers
+                .OrderBy(t => t.GetNextFireTimeUtc())
+                .Take(maxCount)
+                .ToList();
         }
 
         public bool CheckExists(TriggerKey triggerKey)
@@ -200,7 +271,22 @@ namespace Quartz.Impl.MongoDB
 
         public TriggerState GetTriggerState(TriggerKey triggerKey)
         {
-            throw new NotImplementedException();
+            var result = this.Triggers.FindOneByIdAs<BsonDocument>(triggerKey.ToBsonDocument());
+            switch (result.GetElement("State").Value.AsString)
+            {
+                case "Blocked":
+                    return TriggerState.Blocked;
+                case "Complete":
+                    return TriggerState.Complete;
+                case "Error":
+                    return TriggerState.Error;
+                case "Normal":
+                    return TriggerState.Normal;
+                case "Paused":
+                    return TriggerState.Paused;
+                default:
+                    return TriggerState.None;
+            }
         }
 
         public IList<Spi.IOperableTrigger> GetTriggersForJob(JobKey jobKey)
@@ -229,42 +315,68 @@ namespace Quartz.Impl.MongoDB
 
         public bool IsJobGroupPaused(string groupName)
         {
-            throw new NotImplementedException();
+            BsonJavaScript map = new BsonJavaScript("function(){emit(this.JobGroup, this.State == \"" + TriggerState.Paused.ToString() + "\");}");
+            BsonJavaScript reduce = new BsonJavaScript("function(key, values){var result = {isPaused: true};values.foreach(function(value){result.isPaused = result.isPaused && value;});return result;}");
+
+            var result = this.Triggers.MapReduce(map, reduce);
+            var groups = result.InlineResults.Where(r => r.GetElement("value").Value.AsBoolean == true).Select(r => r.GetElement("_id").Value.AsString);
+            return groups
+                .Where(g => g.Equals(groupName))
+                .Count() > 0;
         }
 
         public bool IsTriggerGroupPaused(string groupName)
         {
-            throw new NotImplementedException();
+            return this.GetPausedTriggerGroups()
+                .Where(g => g.Equals(groupName))
+                .Count() > 0;
         }
 
         public void PauseAll()
         {
-            throw new NotImplementedException();
+            this.Triggers.Update(
+                Query.Null,
+                Update.Set("State", TriggerState.Paused.ToString()));
         }
 
         public void PauseJob(JobKey jobKey)
         {
-            throw new NotImplementedException();
+            this.Triggers.Update(
+                Query.And(Query.EQ("JobGroup", jobKey.Group), Query.EQ("JobName", jobKey.Name)),
+                Update.Set("State", TriggerState.Paused.ToString()));
         }
 
         public IList<string> PauseJobs(Matchers.GroupMatcher<JobKey> matcher)
         {
-            throw new NotImplementedException();
+            var result = this.Triggers.Update(
+                Query.EQ("JobGroup", matcher.CompareToValue),
+                Update.Set("State", TriggerState.Paused.ToString()));
+
+            return new List<string>(); // TODO
         }
 
         public void PauseTrigger(TriggerKey triggerKey)
         {
-            throw new NotImplementedException();
+            this.Triggers.Update(
+                Query.EQ("_id", triggerKey.ToBsonDocument()),
+                Update.Set("State", TriggerState.Paused.ToString()));
         }
 
         public Collection.ISet<string> PauseTriggers(Matchers.GroupMatcher<TriggerKey> matcher)
         {
-            throw new NotImplementedException();
+            var result = this.Triggers.Update(
+                Query.EQ("Group", matcher.CompareToValue),
+                Update.Set("State", TriggerState.Paused.ToString()));
+
+            return new Collection.HashSet<string>(); // TODO
         }
 
         public void ReleaseAcquiredTrigger(Spi.IOperableTrigger trigger)
         {
-            throw new NotImplementedException();
+            this.TriggerLocks.Remove(
+                Query.And(
+                    Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                    Query.EQ("InstanceId", this._instanceId)));
         }
 
         public bool RemoveCalendar(string calName)
@@ -324,27 +436,41 @@ namespace Quartz.Impl.MongoDB
 
         public void ResumeAll()
         {
-            throw new NotImplementedException();
+            this.Triggers.Update(
+                Query.Null,
+                Update.Set("State", TriggerState.Normal.ToString()));
         }
 
         public void ResumeJob(JobKey jobKey)
         {
-            throw new NotImplementedException();
+            this.Triggers.Update(
+                Query.And(Query.EQ("JobGroup", jobKey.Group), Query.EQ("JobName", jobKey.Name)),
+                Update.Set("State", TriggerState.Normal.ToString()));
         }
 
         public Collection.ISet<string> ResumeJobs(Matchers.GroupMatcher<JobKey> matcher)
         {
-            throw new NotImplementedException();
+            var result = this.Triggers.Update(
+                Query.EQ("JobGroup", matcher.CompareToValue),
+                Update.Set("State", TriggerState.Normal.ToString()));
+
+            return new Collection.HashSet<string>(); // TODO
         }
 
         public void ResumeTrigger(TriggerKey triggerKey)
         {
-            throw new NotImplementedException();
+            this.Triggers.Update(
+                Query.EQ("_id", triggerKey.ToBsonDocument()),
+                Update.Set("State", TriggerState.Normal.ToString()));
         }
 
         public IList<string> ResumeTriggers(Matchers.GroupMatcher<TriggerKey> matcher)
         {
-            throw new NotImplementedException();
+            var result = this.Triggers.Update(
+                Query.EQ("Group", matcher.CompareToValue),
+                Update.Set("State", TriggerState.Normal.ToString()));
+
+            return new List<string>(); // TODO
         }
 
         public ICalendar RetrieveCalendar(string calName)
@@ -362,7 +488,7 @@ namespace Quartz.Impl.MongoDB
         public Spi.IOperableTrigger RetrieveTrigger(TriggerKey triggerKey)
         {
             return this.Triggers
-                .FindOneByIdAs<Spi.IOperableTrigger>(triggerKey.ToString());
+                .FindOneByIdAs<Spi.IOperableTrigger>(triggerKey.ToBsonDocument());
         }
 
         public void SchedulerPaused()
@@ -456,12 +582,67 @@ namespace Quartz.Impl.MongoDB
 
         public void TriggeredJobComplete(Spi.IOperableTrigger trigger, IJobDetail jobDetail, SchedulerInstruction triggerInstCode)
         {
-            throw new NotImplementedException();
+            switch (triggerInstCode)
+            {
+                case SchedulerInstruction.DeleteTrigger:
+                    this.Triggers.Remove(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()));
+                    break;
+                case SchedulerInstruction.ReExecuteJob:
+                    // TODO ??
+                    break;
+                case SchedulerInstruction.SetAllJobTriggersComplete:
+                    this.Triggers.Update(
+                        Query.EQ("JobKey", jobDetail.Key.ToBsonDocument()),
+                        Update.Set("State", TriggerState.Complete.ToString()));
+                    break;
+                case SchedulerInstruction.SetAllJobTriggersError:
+                    this.Triggers.Update(
+                        Query.EQ("JobKey", jobDetail.Key.ToBsonDocument()),
+                        Update.Set("State", TriggerState.Error.ToString()));
+                    break;
+                case SchedulerInstruction.SetTriggerComplete:
+                    this.Triggers.Update(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                        Update.Set("State", TriggerState.Complete.ToString()));
+                    break;
+                case SchedulerInstruction.SetTriggerError:
+                    this.Triggers.Update(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                        Update.Set("State", TriggerState.Error.ToString()));
+                    break;
+                default: // SchedulerInstruction.NoInstruction
+                    break;
+            }
+
+            _signaler.SignalSchedulingChange(new DateTimeOffset());
+            /*this.TriggerLocks.Remove(
+                Query.And(
+                    Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                    Query.EQ("InstanceId", this._instanceId)));*/
+            this.Triggers.Update(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                        Update.Set("FireInstanceId", null));
         }
 
         public IList<Spi.TriggerFiredResult> TriggersFired(IList<Spi.IOperableTrigger> triggers)
         {
-            throw new NotImplementedException();
+            IList<Spi.TriggerFiredResult> firedTriggers = new List<Spi.TriggerFiredResult>();
+            
+            foreach (Spi.IOperableTrigger trigger in triggers)
+            {
+                trigger.Triggered(null);
+                trigger.FireInstanceId = this._instanceId;
+                this.StoreTrigger(trigger, true);
+                DateTimeOffset? previousFireTimeUtc = trigger.GetPreviousFireTimeUtc();
+                
+                IJobDetail jobDetail = RetrieveJob(trigger.JobKey);
+                Spi.TriggerFiredBundle bundle = new Spi.TriggerFiredBundle(jobDetail, trigger, null, false, DateTime.Now, trigger.GetPreviousFireTimeUtc(), previousFireTimeUtc, trigger.GetNextFireTimeUtc());
+                Spi.TriggerFiredResult result = new Spi.TriggerFiredResult(bundle);
+                firedTriggers.Add(result);
+            }
+
+            return firedTriggers;
         }
 
         public static string GetConnectionString(IDictionary config)

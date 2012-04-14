@@ -2,7 +2,4 @@
   <connectionStrings>
     <add name="quartznet-mongodb" connectionString="server=localhost;database=quartznet;"/>
   </connectionStrings>
-  <quartz>
-    <add key="quartz.jobStore.type" value="Quartz.Impl.MongoDB.JobStore, Quartz.Impl.MongoDB"/>
-  </quartz>
 </configuration>
