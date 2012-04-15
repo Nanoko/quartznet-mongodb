@@ -55,6 +55,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="NaiveJobStore.cs" />
     <Compile Include="DateTimeSerializer.cs" />
     <Compile Include="DateTimeOffsetSerializer.cs" />
     <Compile Include="JobKeySerializer.cs" />

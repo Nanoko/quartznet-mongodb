@@ -24,8 +24,8 @@ namespace Quartz.Impl.MongoDB
                 
                 bsonReader.ReadStartDocument();
                 item = new JobKey(
-                    bsonReader.ReadString("Group"),
-                    bsonReader.ReadString("Name"));
+                    bsonReader.ReadString("Name"),
+                    bsonReader.ReadString("Group"));
                 bsonReader.ReadEndDocument();
 
                 return item;
@@ -72,8 +72,8 @@ namespace Quartz.Impl.MongoDB
             JobKey item = (JobKey)value;
 
             bsonWriter.WriteStartDocument();
-            bsonWriter.WriteString("Group", item.Group);
             bsonWriter.WriteString("Name", item.Name);
+            bsonWriter.WriteString("Group", item.Group);
             bsonWriter.WriteEndDocument();
         }
 
