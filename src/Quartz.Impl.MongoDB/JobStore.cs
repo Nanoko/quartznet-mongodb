@@ -65,12 +65,11 @@ namespace Quartz.Impl.MongoDB
 
         private MongoDatabase database;
         private string instanceId;
-        
+
         private MongoCollection Calendars { get { return this.database.GetCollection("Calendars"); } }
         private MongoCollection Jobs { get { return this.database.GetCollection("Jobs"); } }
         private MongoCollection Triggers { get { return this.database.GetCollection("Triggers"); } }
-        private MongoCollection InternalTriggerStates { get { return this.database.GetCollection("InternalTriggerStates"); } }
-        private MongoCollection TimeTriggers { get { return this.database.GetCollection("TimeTriggers"); } }
+        private MongoCollection TriggerStates { get { return this.database.GetCollection("TriggerStates"); } }
         private MongoCollection PausedTriggerGroups { get { return this.database.GetCollection("PausedTriggerGroups"); } }
         private MongoCollection PausedJobGroups { get { return this.database.GetCollection("PausedJobGroups"); } }
         private MongoCollection BlockedJobs { get { return this.database.GetCollection("BlockedJobs"); } }
@@ -117,7 +116,7 @@ namespace Quartz.Impl.MongoDB
                 t => true
             );
 
-            BsonSerializer.RegisterSerializer(
+            /*BsonSerializer.RegisterSerializer(
                 typeof(DateTimeOffset),
                 new DateTimeOffsetSerializer()
             );
@@ -125,7 +124,7 @@ namespace Quartz.Impl.MongoDB
             BsonSerializer.RegisterSerializer(
                 typeof(DateTime),
                 new DateTimeSerializer()
-            );
+            );*/
 
             BsonSerializer.RegisterSerializer(
                 typeof(JobKey),
@@ -266,8 +265,7 @@ namespace Quartz.Impl.MongoDB
             {
                 // unschedule jobs (delete triggers)
                 this.Triggers.RemoveAll();
-                this.TimeTriggers.RemoveAll();
-                this.InternalTriggerStates.RemoveAll();
+                this.TriggerStates.RemoveAll();
                 this.PausedTriggerGroups.RemoveAll();
 
                 // delete jobs
@@ -511,27 +509,23 @@ namespace Quartz.Impl.MongoDB
 
                 BsonDocument triggerState = new BsonDocument();
                 triggerState.Add("_id", newTrigger.Key.ToBsonDocument());
-                triggerState.Add("State", InternalTriggerState.Waiting);
+                triggerState.Add("State", "Waiting");
 
                 if (this.PausedTriggerGroups.FindOneByIdAs<BsonDocument>(newTrigger.Key.Group) != null
                     || this.PausedJobGroups.FindOneByIdAs<BsonDocument>(newTrigger.JobKey.Group) != null)
                 {
-                    triggerState["State"] = InternalTriggerState.Paused;
+                    triggerState["State"] = "Paused";
                     if (this.BlockedJobs.FindOneByIdAs<BsonDocument>(newTrigger.JobKey.ToBsonDocument()) != null)
                     {
-                        triggerState["State"] = InternalTriggerState.PausedAndBlocked;
+                        triggerState["State"] = "PausedAndBlocked";
                     }
                 }
                 else if (this.BlockedJobs.FindOneByIdAs<BsonDocument>(newTrigger.JobKey.ToBsonDocument()) != null)
                 {
-                    triggerState["State"] = InternalTriggerState.Blocked;
-                }
-                else
-                {
-                    this.TimeTriggers.Save(newTrigger);
+                    triggerState["State"] = "Blocked";
                 }
 
-                this.InternalTriggerStates.Save(triggerState);
+                this.TriggerStates.Save(triggerState);
             }
         }
 
@@ -553,14 +547,12 @@ namespace Quartz.Impl.MongoDB
             {
                 var trigger = this.RetrieveTrigger(key);
                 found = trigger != null;
-                
+
                 if (found)
                 {
                     this.Triggers.Remove(
                         Query.EQ("_id", trigger.Key.ToBsonDocument()));
-                    this.TimeTriggers.Remove(
-                        Query.EQ("_id", trigger.Key.ToBsonDocument()));
-                    this.InternalTriggerStates.Remove(
+                    this.TriggerStates.Remove(
                         Query.EQ("_id", trigger.Key.ToBsonDocument()));
 
                     if (removeOrphanedJob)
@@ -695,29 +687,29 @@ namespace Quartz.Impl.MongoDB
         {
             lock (lockObject)
             {
-                BsonDocument triggerState = this.InternalTriggerStates.FindOneByIdAs<BsonDocument>(triggerKey.ToBsonDocument());
+                BsonDocument triggerState = this.TriggerStates.FindOneByIdAs<BsonDocument>(triggerKey.ToBsonDocument());
 
                 if (triggerState.IsBsonNull)
                 {
                     return TriggerState.None;
                 }
-                if (triggerState["State"] == InternalTriggerState.Complete)
+                if (triggerState["State"] == "Complete")
                 {
                     return TriggerState.Complete;
                 }
-                if (triggerState["State"] == InternalTriggerState.Paused)
+                if (triggerState["State"] == "Paused")
                 {
                     return TriggerState.Paused;
                 }
-                if (triggerState["State"] == InternalTriggerState.PausedAndBlocked)
+                if (triggerState["State"] == "PausedAndBlocked")
                 {
                     return TriggerState.Paused;
                 }
-                if (triggerState["State"] == InternalTriggerState.Blocked)
+                if (triggerState["State"] == "Blocked")
                 {
                     return TriggerState.Blocked;
                 }
-                if (triggerState["State"] == InternalTriggerState.Error)
+                if (triggerState["State"] == "Error")
                 {
                     return TriggerState.Error;
                 }
@@ -752,21 +744,14 @@ namespace Quartz.Impl.MongoDB
                 }
 
                 this.Calendars.Save(calendar);
-                
+
                 if (updateTriggers)
                 {
                     var triggers = this.Triggers.FindAs<IOperableTrigger>(Query.EQ("CalendarName", name));
                     foreach (IOperableTrigger trigger in triggers)
                     {
-                        bool removed = this.TimeTriggers.FindOneByIdAs<BsonDocument>(trigger.Key.ToBsonDocument()) != null;
-
                         trigger.UpdateWithNewCalendar(calendar, MisfireThreshold);
                         this.Triggers.Save(trigger);
-
-                        if (removed)
-                        {
-                            this.TimeTriggers.Save(trigger);
-                        }
                     }
                 }
             }
@@ -956,26 +941,17 @@ namespace Quartz.Impl.MongoDB
         {
             lock (lockObject)
             {
-                BsonDocument triggerState = this.InternalTriggerStates.FindOneByIdAs<BsonDocument>(triggerKey.ToBsonDocument());
+                this.TriggerStates.Update(
+                    Query.And(
+                        Query.EQ("_id", triggerKey.ToBsonDocument()),
+                        Query.EQ("State", "Blocked")),
+                    Update.Set("State", "PausedAndBlocked"));
 
-                // if the trigger is "complete" pausing it does not make sense...
-                if (triggerState["State"] == InternalTriggerState.Complete)
-                {
-                    return;
-                }
-
-                if (triggerState["State"] == InternalTriggerState.Blocked)
-                {
-                    triggerState["State"] = InternalTriggerState.PausedAndBlocked;
-                }
-                else
-                {
-                    triggerState["State"] = InternalTriggerState.Paused;
-                }
-
-                this.InternalTriggerStates.Save(triggerState);
-                this.TimeTriggers.Remove(
-                    Query.EQ("_id", triggerKey.ToBsonDocument()));
+                this.TriggerStates.Update(
+                    Query.And(
+                        Query.EQ("_id", triggerKey.ToBsonDocument()),
+                        Query.NE("State", "Blocked")),
+                    Update.Set("State", "Paused"));
             }
         }
 
@@ -1118,30 +1094,26 @@ namespace Quartz.Impl.MongoDB
                     return;
                 }
 
-                BsonDocument triggerState = this.InternalTriggerStates.FindOneByIdAs<BsonDocument>(triggerKey.ToBsonDocument());
+                BsonDocument triggerState = this.TriggerStates.FindOneByIdAs<BsonDocument>(triggerKey.ToBsonDocument());
                 // if the trigger is not paused resuming it does not make sense...
-                if (triggerState["State"] != InternalTriggerState.Paused &&
-                    triggerState["State"] != InternalTriggerState.PausedAndBlocked)
+                if (triggerState["State"] != "Paused" &&
+                    triggerState["State"] != "PausedAndBlocked")
                 {
                     return;
                 }
 
                 if (this.BlockedJobs.FindOneByIdAs<BsonDocument>(trigger.JobKey.ToBsonDocument()) != null)
                 {
-                    triggerState["State"] = InternalTriggerState.Blocked;
+                    triggerState["State"] = "Blocked";
                 }
                 else
                 {
-                    triggerState["State"] = InternalTriggerState.Waiting;
+                    triggerState["State"] = "Waiting";
                 }
 
                 this.ApplyMisfire(trigger);
 
-                this.InternalTriggerStates.Save(triggerState);
-                if (triggerState["State"] == InternalTriggerState.Waiting)
-                {
-                    this.TimeTriggers.Save(trigger);
-                }
+                this.TriggerStates.Save(triggerState);
             }
         }
 
@@ -1328,15 +1300,11 @@ namespace Quartz.Impl.MongoDB
 
             if (!trigger.GetNextFireTimeUtc().HasValue)
             {
-                this.InternalTriggerStates.Update(
+                this.TriggerStates.Update(
                     Query.EQ("_id", trigger.Key.ToBsonDocument()),
-                    Update.Set("State", InternalTriggerState.Complete));
+                    Update.Set("State", "Complete"));
+
                 signaler.NotifySchedulerListenersFinalized(trigger);
-                lock (lockObject)
-                {
-                    this.TimeTriggers.Remove(
-                        Query.EQ("_id", trigger.Key.ToBsonDocument()));
-                }
             }
             else if (tnft.Equals(trigger.GetNextFireTimeUtc()))
             {
@@ -1359,39 +1327,36 @@ namespace Quartz.Impl.MongoDB
                 this.Instances.Save(new BsonDocument(
                     new BsonElement("_id", this.instanceId),
                     new BsonElement("Expires", (SystemTime.UtcNow() + new TimeSpan(0, 10, 0)).Ticks)));
-                
+
                 this.Instances.Remove(
                     Query.LT("Expires", SystemTime.UtcNow().Ticks));
 
                 IEnumerable<BsonValue> activeInstances = this.Instances.Distinct("_id");
 
-                this.InternalTriggerStates.Update(
+                this.TriggerStates.Update(
                     Query.NotIn("InstanceId", activeInstances),
-                    Update.Set("InstanceId", null)
-                        .Set("State", InternalTriggerState.Waiting));
-                
+                    Update.Unset("InstanceId")
+                        .Set("State", "Waiting"));
+
                 List<IOperableTrigger> result = new List<IOperableTrigger>();
                 Collection.ISet<JobKey> acquiredJobKeysForNoConcurrentExec = new Collection.HashSet<JobKey>();
-                Collection.ISet<IOperableTrigger> excludedTriggers = new Collection.HashSet<IOperableTrigger>();
                 DateTimeOffset? firstAcquiredTriggerFireTime = null;
 
-                // return empty list if store has no triggers.
-                if (this.TimeTriggers.Count() == 0)
-                {
-                    return result;
-                }
+                this.TriggerStates.Update(
+                    Query.EQ("State", "Waiting"),
+                    Update.Set("InstanceId", this.instanceId)
+                        .Set("State", "Locked"));
 
-                while (true)
-                {
-                    var queryFirst = this.TimeTriggers.FindAndRemove(
-                        Query.Null,
-                        SortBy.Ascending("nextFireTimeUtc"));
+                var lockedTriggerKeys = this.TriggerStates.Distinct("_id",
+                    Query.And(
+                        Query.EQ("InstanceId", this.instanceId),
+                        Query.EQ("State", "Locked")));
 
-                    IOperableTrigger trigger = (IOperableTrigger)BsonSerializer.Deserialize(queryFirst.ModifiedDocument, typeof(IOperableTrigger));
-                    if (trigger == null)
-                    {
-                        break;
-                    }
+                var lockedTriggers = this.Triggers.FindAs<Spi.IOperableTrigger>(
+                    Query.In("_id", lockedTriggerKeys));
+                
+                foreach (IOperableTrigger trigger in lockedTriggers)
+                {
                     if (trigger.GetNextFireTimeUtc() == null)
                     {
                         continue;
@@ -1404,22 +1369,16 @@ namespace Quartz.Impl.MongoDB
                     // the first acquired trigger's fire time arrives.
                     if (firstAcquiredTriggerFireTime != null && trigger.GetNextFireTimeUtc() > (firstAcquiredTriggerFireTime.Value + timeWindow))
                     {
-                        this.TimeTriggers.Save(trigger);
                         break;
                     }
 
-                    if (ApplyMisfire(trigger))
+                    if (this.ApplyMisfire(trigger))
                     {
-                        if (trigger.GetNextFireTimeUtc() != null)
-                        {
-                            this.TimeTriggers.Save(trigger);
-                        }
                         continue;
                     }
 
                     if (trigger.GetNextFireTimeUtc() > noLaterThan + timeWindow)
                     {
-                        this.TimeTriggers.Save(trigger);
                         break;
                     }
 
@@ -1431,7 +1390,6 @@ namespace Quartz.Impl.MongoDB
                     {
                         if (acquiredJobKeysForNoConcurrentExec.Contains(jobKey))
                         {
-                            excludedTriggers.Add(trigger);
                             continue; // go to next trigger in store.
                         }
                         else
@@ -1440,11 +1398,11 @@ namespace Quartz.Impl.MongoDB
                         }
                     }
 
-                    this.InternalTriggerStates.Update(
+                    this.TriggerStates.Update(
                         Query.EQ("_id", trigger.Key.ToBsonDocument()),
-                        Update.Set("State", InternalTriggerState.Acquired)
+                        Update.Set("State", "Acquired")
                             .Set("InstanceId", this.instanceId));
-                    
+
                     trigger.FireInstanceId = GetFiredTriggerRecordId();
                     this.Triggers.Save(trigger);
                     result.Add(trigger);
@@ -1460,21 +1418,12 @@ namespace Quartz.Impl.MongoDB
                     }
                 }
 
-                // If we did excluded triggers to prevent ACQUIRE state due to DisallowConcurrentExecution, we need to add them back to store.
-                if (excludedTriggers.Count > 0)
-                {
-                    foreach (IOperableTrigger excludedTrigger in excludedTriggers)
-                    {
-                        this.TimeTriggers.Save(excludedTriggers);
-                    }
-                }
-
-                this.InternalTriggerStates.Update(
+                this.TriggerStates.Update(
                     Query.And(
                         Query.EQ("InstanceId", this.instanceId),
-                        Query.EQ("State", InternalTriggerState.Locked)),
-                    Update.Set("InstanceId", null)
-                        .Set("State", InternalTriggerState.Waiting));
+                        Query.EQ("State", "Locked")),
+                    Update.Unset("InstanceId")
+                        .Set("State", "Waiting"));
 
                 return result;
             }
@@ -1518,8 +1467,8 @@ namespace Quartz.Impl.MongoDB
                         continue;
                     }
                     // was the trigger completed, paused, blocked, etc. since being acquired?
-                    BsonDocument triggerState = this.InternalTriggerStates.FindOneByIdAs<BsonDocument>(trigger.Key.ToBsonDocument());
-                    if (triggerState["State"] != InternalTriggerState.Acquired)
+                    BsonDocument triggerState = this.TriggerStates.FindOneByIdAs<BsonDocument>(trigger.Key.ToBsonDocument());
+                    if (triggerState["State"] != "Acquired")
                     {
                         continue;
                     }
@@ -1535,15 +1484,13 @@ namespace Quartz.Impl.MongoDB
                     }
 
                     DateTimeOffset? prevFireTime = trigger.GetPreviousFireTimeUtc();
-                    // in case trigger was replaced between acquiring and firing
-                    this.TimeTriggers.Remove(
-                        Query.EQ("_id", trigger.Key.ToBsonDocument()));
+
                     // call triggered on our copy, and the scheduler's copy
                     trigger.Triggered(cal);
                     this.Triggers.Save(trigger);
                     //tw.state = TriggerWrapper.STATE_EXECUTING;
-                    triggerState["State"] = InternalTriggerState.Waiting;
-                    this.InternalTriggerStates.Save(triggerState);
+                    triggerState["State"] = "Executing";
+                    this.TriggerStates.Save(triggerState);
 
                     TriggerFiredBundle bndle = new TriggerFiredBundle(this.RetrieveJob(trigger.JobKey),
                                                                       trigger,
@@ -1556,33 +1503,21 @@ namespace Quartz.Impl.MongoDB
 
                     if (job.ConcurrentExectionDisallowed)
                     {
-                        var trigs = this.GetTriggersForJob(job.Key);
-                        foreach (IOperableTrigger trig in trigs)
-                        {
-                            this.InternalTriggerStates.Update(
-                                Query.And(
-                                    Query.EQ("_id", trig.Key.ToBsonDocument()),
-                                    Query.EQ("State", InternalTriggerState.Waiting)),
-                                Update.Set("State", InternalTriggerState.Blocked));
+                        var jobTriggers = this.GetTriggersForJob(job.Key);
+                        IEnumerable<BsonDocument> triggerKeys = jobTriggers.Select(t => t.Key.ToBsonDocument());
+                        this.TriggerStates.Update(
+                            Query.And(
+                                Query.In("_id", triggerKeys),
+                                Query.EQ("State", "Waiting")),
+                            Update.Set("State", "Blocked"));
 
-                            this.InternalTriggerStates.Update(
-                                Query.And(
-                                    Query.EQ("_id", trig.Key.ToBsonDocument()),
-                                    Query.EQ("State", InternalTriggerState.Paused)),
-                                Update.Set("State", InternalTriggerState.PausedAndBlocked));
-
-                            this.TimeTriggers.Remove(
-                                Query.EQ("_id", trig.Key.ToBsonDocument()));
-                        }
+                        this.TriggerStates.Update(
+                            Query.And(
+                                Query.In("_id", triggerKeys),
+                                Query.EQ("State", "Paused")),
+                            Update.Set("State", "PausedAndBlocked"));
                         
-                        this.BlockedJobs.Save(job.Key);
-                    }
-                    else if (trigger.GetNextFireTimeUtc() != null)
-                    {
-                        lock (lockObject)
-                        {
-                            this.TimeTriggers.Save(trigger);
-                        }
+                        this.BlockedJobs.Save(job.Key.ToBsonDocument());
                     }
 
                     results.Add(new TriggerFiredResult(bndle));
@@ -1603,8 +1538,11 @@ namespace Quartz.Impl.MongoDB
         {
             lock (lockObject)
             {
-                BsonDocument triggerState = this.Triggers.FindOneByIdAs<BsonDocument>(trigger.Key.ToBsonDocument());
-                
+                this.TriggerStates.Update(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                        Update.Unset("InstanceId")
+                            .Set("State", "Waiting"));
+
                 // It's possible that the job is null if:
                 //   1- it was deleted during execution
                 //   2- RAMJobStore is being used only for volatile jobs / triggers
@@ -1612,38 +1550,26 @@ namespace Quartz.Impl.MongoDB
 
                 if (jobDetail.PersistJobDataAfterExecution)
                 {
-                    JobDataMap newData = jobDetail.JobDataMap;
-                    if (newData != null)
-                    {
-                        newData = (JobDataMap)newData.Clone();
-                        newData.ClearDirtyFlag();
-                    }
-
-                    jobDetail = jobDetail.GetJobBuilder()
-                        .UsingJobData(newData)
-                        .Build();
-
-                    this.Jobs.Save(jobDetail);
+                    this.Jobs.Update(
+                        Query.EQ("_id", jobDetail.Key.ToBsonDocument()),
+                        Update.Set("JobDataMap", jobDetail.JobDataMap.ToBsonDocument()));
                 }
 
                 if (jobDetail.ConcurrentExectionDisallowed)
                 {
-                    IList<Spi.IOperableTrigger> trigs = this.GetTriggersForJob(jobDetail.Key);
-                    foreach (Spi.IOperableTrigger trig in trigs)
-                    {
-                        BsonDocument trigState = this.Triggers.FindOneByIdAs<BsonDocument>(trig.Key.ToBsonDocument());
-                        if (trigState["State"] == InternalTriggerState.Blocked)
-                        {
-                            trigState["State"] = InternalTriggerState.Waiting;
-                            this.TimeTriggers.Save(trig);
-                        }
-                        if (trigState["State"] == InternalTriggerState.PausedAndBlocked)
-                        {
-                            trigState["State"] = InternalTriggerState.Paused;
-                        }
+                    IList<Spi.IOperableTrigger> jobTriggers = this.GetTriggersForJob(jobDetail.Key);
+                    IEnumerable<BsonDocument> triggerKeys = jobTriggers.Select(t => t.Key.ToBsonDocument());
+                    this.TriggerStates.Update(
+                        Query.And(
+                            Query.In("_id", triggerKeys),
+                            Query.EQ("State", "Blocked")),
+                        Update.Set("State", "Waiting"));
 
-                        this.InternalTriggerStates.Save(trigState);
-                    }
+                    this.TriggerStates.Update(
+                        Query.And(
+                            Query.In("_id", triggerKeys),
+                            Query.EQ("State", "PausedAndBlocked")),
+                        Update.Set("State", "Paused"));
 
                     signaler.SignalSchedulingChange(null);
                 }
@@ -1679,28 +1605,40 @@ namespace Quartz.Impl.MongoDB
                 }
                 else if (triggerInstCode == SchedulerInstruction.SetTriggerComplete)
                 {
-                    triggerState["State"] = InternalTriggerState.Complete;
-                    this.InternalTriggerStates.Save(triggerState);
-                    this.TimeTriggers.Remove(
-                        Query.EQ("_id", trigger.Key.ToBsonDocument()));
+                    this.TriggerStates.Update(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                        Update.Set("State", "Complete"));
+                    
                     signaler.SignalSchedulingChange(null);
                 }
                 else if (triggerInstCode == SchedulerInstruction.SetTriggerError)
                 {
                     Log.Info(string.Format(CultureInfo.InvariantCulture, "Trigger {0} set to ERROR state.", trigger.Key));
-                    triggerState["State"] = InternalTriggerState.Error;
-                    this.InternalTriggerStates.Save(triggerState);
+                    this.TriggerStates.Update(
+                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                        Update.Set("State", "Error"));
+
                     signaler.SignalSchedulingChange(null);
                 }
                 else if (triggerInstCode == SchedulerInstruction.SetAllJobTriggersError)
                 {
                     Log.Info(string.Format(CultureInfo.InvariantCulture, "All triggers of Job {0} set to ERROR state.", trigger.JobKey));
-                    SetAllTriggersOfJobToState(trigger.JobKey, InternalTriggerState.Error);
+                    IList<Spi.IOperableTrigger> jobTriggers = this.GetTriggersForJob(jobDetail.Key);
+                    IEnumerable<BsonDocument> triggerKeys = jobTriggers.Select(t => t.Key.ToBsonDocument());
+                    this.TriggerStates.Update(
+                        Query.In("_id", triggerKeys),
+                        Update.Set("State", "Error"));
+
                     signaler.SignalSchedulingChange(null);
                 }
                 else if (triggerInstCode == SchedulerInstruction.SetAllJobTriggersComplete)
                 {
-                    SetAllTriggersOfJobToState(trigger.JobKey, InternalTriggerState.Complete);
+                    IList<Spi.IOperableTrigger> jobTriggers = this.GetTriggersForJob(jobDetail.Key);
+                    IEnumerable<BsonDocument> triggerKeys = jobTriggers.Select(t => t.Key.ToBsonDocument());
+                    this.TriggerStates.Update(
+                        Query.In("_id", triggerKeys),
+                        Update.Set("State", "Complete"));
+
                     signaler.SignalSchedulingChange(null);
                 }
             }
@@ -1739,101 +1677,10 @@ namespace Quartz.Impl.MongoDB
             get { return true; }
         }
 
-        /// <summary>
-        /// Sets the state of all triggers of job to specified state.
-        /// </summary>
-        protected virtual void SetAllTriggersOfJobToState(JobKey jobKey, InternalTriggerState state)
-        {
-            IList<Spi.IOperableTrigger> triggers = this.GetTriggersForJob(jobKey);
-            foreach (Spi.IOperableTrigger trigger in triggers)
-            {
-                BsonDocument triggerState = this.InternalTriggerStates.FindOneByIdAs<BsonDocument>(trigger.Key.ToBsonDocument());
-                if (triggerState["State"] != InternalTriggerState.Waiting)
-                {
-                    this.TimeTriggers.Remove(
-                        Query.EQ("_id", trigger.Key.ToBsonDocument()));
-                }
-            }
-        }
-
-        /// <summary>
-        /// Peeks the triggers.
-        /// </summary>
-        /// <returns></returns>
-        protected internal virtual string PeekTriggers()
-        {
-            StringBuilder str = new StringBuilder();
-
-            lock (lockObject)
-            {
-                foreach (Spi.IOperableTrigger trigger in this.Triggers.FindAllAs<Spi.IOperableTrigger>())
-                {
-                    str.Append(trigger.Key.Name);
-                    str.Append("/");
-                }
-            }
-            str.Append(" | ");
-
-            lock (lockObject)
-            {
-                foreach (Spi.IOperableTrigger trigger in this.TimeTriggers.FindAllAs<Spi.IOperableTrigger>())
-                {
-                    str.Append(trigger.Key.Name);
-                    str.Append("->");
-                }
-            }
-
-            return str.ToString();
-        }
-
         /// <seealso cref="IJobStore.GetPausedTriggerGroups()" />
         public virtual Collection.ISet<string> GetPausedTriggerGroups()
         {
             return new Collection.HashSet<string>(this.PausedTriggerGroups.FindAllAs<string>());
         }
-    }
-    
-    /// <summary>
-    /// Possible internal trigger states 
-    /// in JobStore
-    /// </summary>
-    public enum InternalTriggerState
-    {
-        /// <summary>
-        /// Waiting 
-        /// </summary>
-        Waiting,
-        /// <summary>
-        /// Acquired
-        /// </summary>
-        Acquired,
-        /// <summary>
-        /// Executing
-        /// </summary>
-        Executing,
-        /// <summary>
-        /// Complete
-        /// </summary>
-        Complete,
-        /// <summary>
-        /// Paused
-        /// </summary>
-        Paused,
-        /// <summary>
-        /// Blocked
-        /// </summary>
-        Blocked,
-        /// <summary>
-        /// Paused and Blocked
-        /// </summary>
-        PausedAndBlocked,
-        /// <summary>
-        /// Error
-        /// </summary>
-        Error,
-        /// <summary>
-        /// Locked
-        /// </summary>
-        Locked
     }
 }
