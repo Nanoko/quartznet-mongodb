@@ -65,15 +65,16 @@ namespace Quartz.Impl.MongoDB
 
         private MongoDatabase database;
         private string instanceId;
+        private string instanceName;
 
-        private MongoCollection Calendars { get { return this.database.GetCollection("Calendars"); } }
-        private MongoCollection Jobs { get { return this.database.GetCollection("Jobs"); } }
-        private MongoCollection Triggers { get { return this.database.GetCollection("Triggers"); } }
-        private MongoCollection TriggerStates { get { return this.database.GetCollection("TriggerStates"); } }
-        private MongoCollection PausedTriggerGroups { get { return this.database.GetCollection("PausedTriggerGroups"); } }
-        private MongoCollection PausedJobGroups { get { return this.database.GetCollection("PausedJobGroups"); } }
-        private MongoCollection BlockedJobs { get { return this.database.GetCollection("BlockedJobs"); } }
-        private MongoCollection Instances { get { return this.database.GetCollection("Instances"); } }
+        private MongoCollection Calendars { get { return this.database.GetCollection(instanceName + ".Calendars"); } }
+        private MongoCollection Jobs { get { return this.database.GetCollection(instanceName + ".Jobs"); } }
+        private MongoCollection Triggers { get { return this.database.GetCollection(instanceName + ".Triggers"); } }
+        private MongoCollection TriggerStates { get { return this.database.GetCollection(instanceName + ".TriggerStates"); } }
+        private MongoCollection PausedTriggerGroups { get { return this.database.GetCollection(instanceName + ".PausedTriggerGroups"); } }
+        private MongoCollection PausedJobGroups { get { return this.database.GetCollection(instanceName + ".PausedJobGroups"); } }
+        private MongoCollection BlockedJobs { get { return this.database.GetCollection(instanceName + ".BlockedJobs"); } }
+        private MongoCollection Schedulers { get { return this.database.GetCollection(instanceName + ".Schedulers"); } }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="JobStore"/> class.
@@ -95,12 +96,6 @@ namespace Quartz.Impl.MongoDB
             lock (lockObject)
             {
                 this.database = MongoDatabase.Create(connectionString);
-
-                this.Jobs.EnsureIndex(IndexKeys.Ascending("Group"));
-
-                this.Triggers.EnsureIndex(IndexKeys.Ascending("Group"));
-                this.Triggers.EnsureIndex(IndexKeys.Ascending("JobGroup"));
-                this.Triggers.EnsureIndex(IndexKeys.Ascending("JobKey"));
             }
         }
 
@@ -115,16 +110,6 @@ namespace Quartz.Impl.MongoDB
                 myConventions,
                 t => true
             );
-
-            /*BsonSerializer.RegisterSerializer(
-                typeof(DateTimeOffset),
-                new DateTimeOffsetSerializer()
-            );
-
-            BsonSerializer.RegisterSerializer(
-                typeof(DateTime),
-                new DateTimeSerializer()
-            );*/
 
             BsonSerializer.RegisterSerializer(
                 typeof(JobKey),
@@ -156,6 +141,29 @@ namespace Quartz.Impl.MongoDB
             {
                 cm.AutoMap();
                 cm.SetIsRootClass(true);
+            });
+
+            BsonClassMap.RegisterClassMap<CalendarIntervalTriggerImpl>(cm =>
+            {
+                cm.AutoMap();
+                cm.MapField("complete");
+                cm.MapField("nextFireTimeUtc");
+                cm.MapField("previousFireTimeUtc");
+            });
+
+            BsonClassMap.RegisterClassMap<CronTriggerImpl>(cm =>
+            {
+                cm.AutoMap();
+                cm.MapField("nextFireTimeUtc");
+                cm.MapField("previousFireTimeUtc");
+            });
+
+            BsonClassMap.RegisterClassMap<DailyTimeIntervalTriggerImpl>(cm =>
+            {
+                cm.AutoMap();
+                cm.MapField("complete");
+                cm.MapField("nextFireTimeUtc");
+                cm.MapField("previousFireTimeUtc");
             });
 
             BsonClassMap.RegisterClassMap<SimpleTriggerImpl>(cm =>
@@ -242,6 +250,13 @@ namespace Quartz.Impl.MongoDB
         /// </summary>
         public virtual void Shutdown()
         {
+            this.Schedulers.Remove(
+                    Query.EQ("_Id", this.instanceId));
+
+            this.TriggerStates.Update(
+                Query.EQ("InstanceId", this.instanceId),
+                Update.Unset("InstanceId")
+                    .Set("State", "Waiting"));
         }
 
         /// <summary>
@@ -972,35 +987,38 @@ namespace Quartz.Impl.MongoDB
                 pausedGroups = new List<string>();
 
                 StringOperator op = matcher.CompareWithOperator;
-                /*if (op == StringOperator.Equality)
+                if (op == StringOperator.Equality)
                 {
-                    if (pausedTriggerGroups.Add(matcher.CompareToValue))
-                    {
-                        pausedGroups.Add(matcher.CompareToValue);
-                    }
+                    this.PausedTriggerGroups.Save(
+                        new BsonDocument(
+                            new BsonElement("_id", matcher.CompareToValue)));
+                    
+                    pausedGroups.Add(matcher.CompareToValue);
                 }
                 else
                 {
-                    foreach (string group in triggersByGroup.Keys)
+                    IList<string> groups = this.GetTriggerGroupNames();
+
+                    foreach (string group in groups)
                     {
                         if (op.Evaluate(group, matcher.CompareToValue))
                         {
-                            if (pausedTriggerGroups.Add(matcher.CompareToValue))
-                            {
-                                pausedGroups.Add(group);
-                            }
+                            this.PausedTriggerGroups.Save(
+                                new BsonDocument(
+                                    new BsonElement("_id", matcher.CompareToValue)));
+
+                            pausedGroups.Add(matcher.CompareToValue);
                         }
                     }
-                }*/
-                throw new NotImplementedException();
+                }
 
                 foreach (string pausedGroup in pausedGroups)
                 {
-                    Collection.ISet<TriggerKey> keys = GetTriggerKeys(GroupMatcher<TriggerKey>.GroupEquals(pausedGroup));
+                    Collection.ISet<TriggerKey> keys = this.GetTriggerKeys(GroupMatcher<TriggerKey>.GroupEquals(pausedGroup));
 
                     foreach (TriggerKey key in keys)
                     {
-                        PauseTrigger(key);
+                        this.PauseTrigger(key);
                     }
                 }
             }
@@ -1038,40 +1056,44 @@ namespace Quartz.Impl.MongoDB
             lock (lockObject)
             {
                 StringOperator op = matcher.CompareWithOperator;
-                /*if (op == StringOperator.Equality)
+                if (op == StringOperator.Equality)
                 {
-                    if (pausedJobGroups.Add(matcher.CompareToValue))
-                    {
-                        pausedGroups.Add(matcher.CompareToValue);
-                    }
+                    this.PausedJobGroups.Save(
+                        new BsonDocument(
+                            new BsonElement("_id", matcher.CompareToValue)));
+
+                    pausedGroups.Add(matcher.CompareToValue);
                 }
                 else
                 {
-                    foreach (String group in jobsByGroup.Keys)
+                    IList<string> groups = this.GetJobGroupNames();
+
+                    foreach (string group in groups)
                     {
                         if (op.Evaluate(group, matcher.CompareToValue))
                         {
-                            if (pausedJobGroups.Add(group))
-                            {
-                                pausedGroups.Add(group);
-                            }
+                            this.PausedJobGroups.Save(
+                                new BsonDocument(
+                                    new BsonElement("_id", matcher.CompareToValue)));
+
+                            pausedGroups.Add(matcher.CompareToValue);
                         }
                     }
-                }*/
-                throw new NotImplementedException();
+                }
 
                 foreach (string groupName in pausedGroups)
                 {
                     foreach (JobKey jobKey in GetJobKeys(GroupMatcher<JobKey>.GroupEquals(groupName)))
                     {
-                        IList<IOperableTrigger> triggers = GetTriggersForJob(jobKey);
+                        IList<IOperableTrigger> triggers = this.GetTriggersForJob(jobKey);
                         foreach (IOperableTrigger trigger in triggers)
                         {
-                            PauseTrigger(trigger.Key);
+                            this.PauseTrigger(trigger.Key);
                         }
                     }
                 }
             }
+
             return pausedGroups;
         }
 
@@ -1130,23 +1152,21 @@ namespace Quartz.Impl.MongoDB
             Collection.ISet<string> groups = new Collection.HashSet<string>();
             lock (lockObject)
             {
-                Collection.ISet<TriggerKey> keys = GetTriggerKeys(matcher);
+                Collection.ISet<TriggerKey> keys = this.GetTriggerKeys(matcher);
 
                 foreach (TriggerKey triggerKey in keys)
                 {
                     groups.Add(triggerKey.Group);
-                    /*TriggerWrapper tw;
-                    if (triggersByKey.TryGetValue(triggerKey, out tw))
+                    IOperableTrigger trigger = this.Triggers.FindOneByIdAs<IOperableTrigger>(triggerKey.ToBsonDocument());
+                    var pausedJobGroup = this.PausedJobGroups.FindOneByIdAs<string>(trigger.JobKey.Group);
+                    if (pausedJobGroup != null)
                     {
-                        String jobGroup = tw.jobKey.Group;
-                        if (pausedJobGroups.Contains(jobGroup))
-                        {
-                            continue;
-                        }
-                    }*/
-                    throw new NotImplementedException();
-                    ResumeTrigger(triggerKey);
+                        continue;
+                    }
+
+                    this.ResumeTrigger(triggerKey);
                 }
+
                 foreach (String group in groups)
                 {
                     this.PausedTriggerGroups.Remove(
@@ -1324,14 +1344,14 @@ namespace Quartz.Impl.MongoDB
             lock (lockObject)
             {
                 // multiple instances management
-                this.Instances.Save(new BsonDocument(
+                this.Schedulers.Save(new BsonDocument(
                     new BsonElement("_id", this.instanceId),
                     new BsonElement("Expires", (SystemTime.UtcNow() + new TimeSpan(0, 10, 0)).Ticks)));
 
-                this.Instances.Remove(
+                this.Schedulers.Remove(
                     Query.LT("Expires", SystemTime.UtcNow().Ticks));
 
-                IEnumerable<BsonValue> activeInstances = this.Instances.Distinct("_id");
+                IEnumerable<BsonValue> activeInstances = this.Schedulers.Distinct("_id");
 
                 this.TriggerStates.Update(
                     Query.NotIn("InstanceId", activeInstances),
@@ -1353,7 +1373,8 @@ namespace Quartz.Impl.MongoDB
                         Query.EQ("State", "Locked")));
 
                 var lockedTriggers = this.Triggers.FindAs<Spi.IOperableTrigger>(
-                    Query.In("_id", lockedTriggerKeys));
+                    Query.In("_id", lockedTriggerKeys))
+                    .OrderBy(t => t.GetNextFireTimeUtc());
                 
                 foreach (IOperableTrigger trigger in lockedTriggers)
                 {
@@ -1367,7 +1388,8 @@ namespace Quartz.Impl.MongoDB
                     // So we select from the first next trigger to fire up until the max fire ahead time after that...
                     // which will perfectly honor the fireAheadTime window because the no firing will occur until
                     // the first acquired trigger's fire time arrives.
-                    if (firstAcquiredTriggerFireTime != null && trigger.GetNextFireTimeUtc() > (firstAcquiredTriggerFireTime.Value + timeWindow))
+                    if (firstAcquiredTriggerFireTime != null 
+                        && trigger.GetNextFireTimeUtc() > (firstAcquiredTriggerFireTime.Value + timeWindow))
                     {
                         break;
                     }
@@ -1438,13 +1460,10 @@ namespace Quartz.Impl.MongoDB
         {
             lock (lockObject)
             {
-                /*TriggerWrapper tw;
-                if (triggersByKey.TryGetValue(trigger.Key, out tw) && tw.state == InternalTriggerState.Acquired)
-                {
-                    tw.state = InternalTriggerState.Waiting;
-                    timeTriggers.Add(tw);
-                }*/
-                throw new NotImplementedException();
+                this.TriggerStates.Update(
+                    Query.EQ("_id", trigger.Key.ToBsonDocument()),
+                    Update.Unset("InstanceId")
+                        .Set("State", "Waiting"));
             }
         }
 
@@ -1488,7 +1507,7 @@ namespace Quartz.Impl.MongoDB
                     // call triggered on our copy, and the scheduler's copy
                     trigger.Triggered(cal);
                     this.Triggers.Save(trigger);
-                    //tw.state = TriggerWrapper.STATE_EXECUTING;
+
                     triggerState["State"] = "Executing";
                     this.TriggerStates.Save(triggerState);
 
@@ -1504,7 +1523,10 @@ namespace Quartz.Impl.MongoDB
                     if (job.ConcurrentExectionDisallowed)
                     {
                         var jobTriggers = this.GetTriggersForJob(job.Key);
-                        IEnumerable<BsonDocument> triggerKeys = jobTriggers.Select(t => t.Key.ToBsonDocument());
+                        IEnumerable<BsonDocument> triggerKeys = jobTriggers
+                            .Where(t => !t.Key.Equals(trigger.Key))
+                            .Select(t => t.Key.ToBsonDocument());
+                        
                         this.TriggerStates.Update(
                             Query.And(
                                 Query.In("_id", triggerKeys),
@@ -1517,7 +1539,9 @@ namespace Quartz.Impl.MongoDB
                                 Query.EQ("State", "Paused")),
                             Update.Set("State", "PausedAndBlocked"));
                         
-                        this.BlockedJobs.Save(job.Key.ToBsonDocument());
+                        this.BlockedJobs.Save(
+                            new BsonDocument(
+                                new BsonElement("_id", job.Key.ToBsonDocument())));
                     }
 
                     results.Add(new TriggerFiredResult(bndle));
@@ -1538,10 +1562,7 @@ namespace Quartz.Impl.MongoDB
         {
             lock (lockObject)
             {
-                this.TriggerStates.Update(
-                        Query.EQ("_id", trigger.Key.ToBsonDocument()),
-                        Update.Unset("InstanceId")
-                            .Set("State", "Waiting"));
+                this.ReleaseAcquiredTrigger(trigger);
 
                 // It's possible that the job is null if:
                 //   1- it was deleted during execution
@@ -1659,7 +1680,7 @@ namespace Quartz.Impl.MongoDB
         /// </summary>
         public virtual string InstanceName
         {
-            set { }
+            set { this.instanceName = value; }
         }
 
         public int ThreadPoolSize
