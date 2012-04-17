@@ -231,7 +231,9 @@ namespace Quartz.Impl.MongoDB
         /// </summary>
         public void SchedulerPaused()
         {
-            // nothing to do
+            this.Schedulers.Update(
+                    Query.EQ("_id", this.instanceId),
+                    Update.Set("State", "Paused"));
         }
 
         /// <summary>
@@ -240,7 +242,9 @@ namespace Quartz.Impl.MongoDB
         /// </summary>
         public void SchedulerResumed()
         {
-            // nothing to do
+            this.Schedulers.Update(
+                    Query.EQ("_id", this.instanceId),
+                    Update.Set("State", "Resuming"));
         }
 
         /// <summary>
@@ -1346,7 +1350,8 @@ namespace Quartz.Impl.MongoDB
                 // multiple instances management
                 this.Schedulers.Save(new BsonDocument(
                     new BsonElement("_id", this.instanceId),
-                    new BsonElement("Expires", (SystemTime.UtcNow() + new TimeSpan(0, 10, 0)).Ticks)));
+                    new BsonElement("Expires", (SystemTime.UtcNow() + new TimeSpan(0, 10, 0)).Ticks),
+                    new BsonElement("State", "Running")));
 
                 this.Schedulers.Remove(
                     Query.LT("Expires", SystemTime.UtcNow().Ticks));
@@ -1394,14 +1399,18 @@ namespace Quartz.Impl.MongoDB
                         break;
                     }
 
-                    if (this.ApplyMisfire(trigger))
-                    {
-                        continue;
-                    }
-
                     if (trigger.GetNextFireTimeUtc() > noLaterThan + timeWindow)
                     {
                         break;
+                    }
+
+                    if (this.ApplyMisfire(trigger))
+                    {
+                        if (trigger.GetNextFireTimeUtc() == null
+                            || trigger.GetNextFireTimeUtc() > noLaterThan + timeWindow)
+                        {
+                            continue;
+                        }
                     }
 
                     // If trigger's job is set as @DisallowConcurrentExecution, and it has already been added to result, then
