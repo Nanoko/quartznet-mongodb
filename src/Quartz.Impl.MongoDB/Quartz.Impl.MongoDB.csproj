@@ -55,11 +55,12 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="CalendarWrapper.cs" />
     <Compile Include="JobKeySerializer.cs" />
     <Compile Include="JobDataMapSerializer.cs" />
     <Compile Include="JobDetailImplSerializer.cs" />
     <Compile Include="JobStore.cs" />
-    <Compile Include="IdOrKeyOrNameConvention.cs" />
+    <Compile Include="IdOrKeyConvention.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="TriggerKeySerializer.cs" />
   </ItemGroup>

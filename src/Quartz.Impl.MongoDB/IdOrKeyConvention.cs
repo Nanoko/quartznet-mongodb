@@ -6,7 +6,7 @@ using MongoDB.Bson.Serialization.Conventions;
 
 namespace Quartz.Impl.MongoDB
 {
-    public class IdOrKeyOrNameConvention : IIdMemberConvention
+    public class IdOrKeyConvention : IIdMemberConvention
     {
         public string FindIdMember(Type type)
         {
@@ -15,9 +15,6 @@ namespace Quartz.Impl.MongoDB
 
             if (type.GetProperty("Key") != null)
                 return "Key";
-
-            if (type.GetProperty("Name") != null)
-                return "Name";
             
             return null;
         }

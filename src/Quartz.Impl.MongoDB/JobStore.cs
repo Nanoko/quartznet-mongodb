@@ -40,6 +40,7 @@ using MongoDB.Bson.Serialization;
 using Quartz.Impl.Triggers;
 using MongoDB.Bson;
 using MongoDB.Driver.Builders;
+using Quartz.Impl.Calendar;
 
 namespace Quartz.Impl.MongoDB
 {
@@ -105,7 +106,7 @@ namespace Quartz.Impl.MongoDB
         static JobStore()
         {
             var myConventions = new ConventionProfile();
-            myConventions.SetIdMemberConvention(new IdOrKeyOrNameConvention());
+            myConventions.SetIdMemberConvention(new IdOrKeyConvention());
             BsonClassMap.RegisterConventions(
                 myConventions,
                 t => true
@@ -157,7 +158,7 @@ namespace Quartz.Impl.MongoDB
                 cm.MapField("nextFireTimeUtc");
                 cm.MapField("previousFireTimeUtc");
             });
-
+            
             BsonClassMap.RegisterClassMap<DailyTimeIntervalTriggerImpl>(cm =>
             {
                 cm.AutoMap();
@@ -752,7 +753,11 @@ namespace Quartz.Impl.MongoDB
         public virtual void StoreCalendar(string name, ICalendar calendar, bool replaceExisting,
                                           bool updateTriggers)
         {
-            calendar = (ICalendar)calendar.Clone();
+            CalendarWrapper calendarWrapper = new CalendarWrapper()
+                {
+                    Name = name,
+                    Calendar = calendar
+                };
 
             lock (lockObject)
             {
@@ -762,7 +767,7 @@ namespace Quartz.Impl.MongoDB
                     throw new ObjectAlreadyExistsException(string.Format(CultureInfo.InvariantCulture, "Calendar with name '{0}' already exists.", name));
                 }
 
-                this.Calendars.Save(calendar);
+                this.Calendars.Save(calendarWrapper);
 
                 if (updateTriggers)
                 {
@@ -803,7 +808,7 @@ namespace Quartz.Impl.MongoDB
         }
 
         /// <summary>
-        /// Retrieve the given <see cref="ITrigger" />.
+        /// Retrieve the given <see cref="ICalendar" />.
         /// </summary>
         /// <param name="calName">The name of the <see cref="ICalendar" /> to be retrieved.</param>
         /// <returns>
@@ -813,8 +818,15 @@ namespace Quartz.Impl.MongoDB
         {
             lock (lockObject)
             {
-                return this.Calendars
-                    .FindOneByIdAs<ICalendar>(calName);
+                CalendarWrapper calendarWrapper = this.Calendars
+                    .FindOneByIdAs<CalendarWrapper>(calName);
+
+                if (calendarWrapper != null)
+                {
+                    return calendarWrapper.Calendar;
+                }
+
+                return null;
             }
         }
 
@@ -1317,7 +1329,7 @@ namespace Quartz.Impl.MongoDB
                 cal = this.RetrieveCalendar(trigger.CalendarName);
             }
 
-            signaler.NotifyTriggerListenersMisfired((IOperableTrigger)trigger.Clone());
+            signaler.NotifyTriggerListenersMisfired(trigger);
 
             trigger.UpdateAfterMisfire(cal);
             this.Triggers.Save(trigger);
