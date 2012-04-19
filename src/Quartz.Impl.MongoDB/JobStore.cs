@@ -256,7 +256,7 @@ namespace Quartz.Impl.MongoDB
         public virtual void Shutdown()
         {
             this.Schedulers.Remove(
-                    Query.EQ("_Id", this.instanceId));
+                    Query.EQ("_id", this.instanceId));
 
             this.TriggerStates.Update(
                 Query.EQ("InstanceId", this.instanceId),
