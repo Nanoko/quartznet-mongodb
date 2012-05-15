@@ -31,3 +31,8 @@ Remember this will still need to set a valid connection string in web or app con
 	
 	IScheduler scheduler = new Quartz.Impl.StdSchedulerFactory(properties).GetScheduler();
 
+## Changes in version 1.1
+ + Respects trigger priority
+ + Serializes DateTimeOffset as MongoDB ISODate
+ + Fixes DailyCalendar time range exclusion
+ + Improves clustered concurrency and large trigger collection management

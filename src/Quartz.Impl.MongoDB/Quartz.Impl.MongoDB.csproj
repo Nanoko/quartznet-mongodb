@@ -56,6 +56,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="CalendarWrapper.cs" />
+    <Compile Include="DateTimeOffsetSerializer.cs" />
     <Compile Include="JobKeySerializer.cs" />
     <Compile Include="JobDataMapSerializer.cs" />
     <Compile Include="JobDetailImplSerializer.cs" />
