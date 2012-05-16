@@ -1383,13 +1383,13 @@ namespace Quartz.Impl.MongoDB
                 Collection.ISet<JobKey> acquiredJobKeysForNoConcurrentExec = new Collection.HashSet<JobKey>();
                 DateTimeOffset? firstAcquiredTriggerFireTime = null;
                 
-                var lockedTriggers = this.Triggers.FindAs<Spi.IOperableTrigger>(
+                var candidates = this.Triggers.FindAs<Spi.IOperableTrigger>(
                     Query.And(
                         Query.EQ("State", "Waiting"),
                         Query.LTE("nextFireTimeUtc", (noLaterThan + timeWindow).UtcDateTime)))
                     .OrderBy(t => t.GetNextFireTimeUtc()).ThenBy(t => t.Priority);
                 
-                foreach (IOperableTrigger trigger in lockedTriggers)
+                foreach (IOperableTrigger trigger in candidates)
                 {
                     if (trigger.GetNextFireTimeUtc() == null)
                     {
@@ -1403,11 +1403,6 @@ namespace Quartz.Impl.MongoDB
                     // the first acquired trigger's fire time arrives.
                     if (firstAcquiredTriggerFireTime != null 
                         && trigger.GetNextFireTimeUtc() > (firstAcquiredTriggerFireTime.Value + timeWindow))
-                    {
-                        break;
-                    }
-
-                    if (trigger.GetNextFireTimeUtc() > noLaterThan + timeWindow)
                     {
                         break;
                     }

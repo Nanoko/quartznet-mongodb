@@ -4,7 +4,7 @@
     <id>quartz.impl.mongodb</id>
     <version>1.1.0</version>
     <title>Quartz.NET on MongoDB</title>
-    <authors>Renaud Calmont, Ghozlane Toumi</authors>
+    <authors>Renaud Calmont</authors>
     <owners>Renaud Calmont</owners>
     <licenseUrl>http://www.apache.org/licenses/LICENSE-2.0</licenseUrl>
     <projectUrl>https://github.com/Nanoko/quartznet-mongodb</projectUrl>
