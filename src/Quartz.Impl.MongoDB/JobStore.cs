@@ -1387,7 +1387,7 @@ namespace Quartz.Impl.MongoDB
                     Query.And(
                         Query.EQ("State", "Waiting"),
                         Query.LTE("nextFireTimeUtc", (noLaterThan + timeWindow).UtcDateTime)))
-                    .OrderBy(t => t.GetNextFireTimeUtc()).ThenBy(t => t.Priority);
+                    .OrderBy(t => t.GetNextFireTimeUtc()).ThenByDescending(t => t.Priority);
                 
                 foreach (IOperableTrigger trigger in candidates)
                 {
