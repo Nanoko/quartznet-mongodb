@@ -1242,12 +1242,9 @@ namespace Quartz.Impl.MongoDB
                     }
                 }
 
-                foreach (String resumedGroup in resumedGroups)
-                {
-                    this.PausedTriggerGroups.Remove(
-                        Query.All("_id", resumedGroup));
-                }
-
+                this.PausedTriggerGroups.Remove(
+                        Query.All("_id", new BsonArray(resumedGroups)));
+                
                 foreach (JobKey key in keys)
                 {
                     IList<IOperableTrigger> triggers = GetTriggersForJob(key);

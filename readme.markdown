@@ -31,6 +31,9 @@ Remember this will still need to set a valid connection string in web or app con
 	
 	IScheduler scheduler = new Quartz.Impl.StdSchedulerFactory(properties).GetScheduler();
 
+## Changes in version 1.2
+ + Updated NuGet dependencies to Quartz 2.0.1 and MongoCSharpDriver 1.5
+
 ## Changes in version 1.1
  + Respects trigger priority
  + Serializes DateTimeOffset as MongoDB ISODate
