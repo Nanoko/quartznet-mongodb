@@ -143,6 +143,8 @@ namespace Quartz.Impl.MongoDB
                 new DateTimeOffsetSerializer()
             );
 
+            BsonSerializer.RegisterGenericSerializerDefinition(typeof(Collection.ISet<>), typeof(SetSerializer<>));
+
             BsonClassMap.RegisterClassMap<AbstractTrigger>(cm =>
             {
                 cm.AutoMap();
