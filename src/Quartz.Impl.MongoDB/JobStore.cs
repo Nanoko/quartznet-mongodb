@@ -384,6 +384,19 @@ namespace Quartz.Impl.MongoDB
             }
         }
 
+        public void StoreJobsAndTriggers(IDictionary<IJobDetail, Collection.ISet<ITrigger>> triggersAndJobs, bool replace)
+        {
+            var dictionary = new Dictionary<IJobDetail, IList<ITrigger>>();
+
+            foreach (var triggersAndJob in triggersAndJobs)
+            {
+                dictionary.Add(triggersAndJob.Key, triggersAndJob.Value.ToList());
+            }
+
+            StoreJobsAndTriggers(new Dictionary<IJobDetail, IList<ITrigger>>(dictionary), replace);
+
+        }
+
         /// <summary>
         /// Remove (delete) the <see cref="IJob" /> with the given
         /// name, and any <see cref="ITrigger" /> s that reference
@@ -1419,7 +1432,8 @@ namespace Quartz.Impl.MongoDB
                     // put it back into the timeTriggers set and continue to search for next trigger.
                     JobKey jobKey = trigger.JobKey;
                     IJobDetail job = this.Jobs.FindOneByIdAs<IJobDetail>(jobKey.ToBsonDocument());
-                    if (job.ConcurrentExectionDisallowed)
+                    
+                    if (job.ConcurrentExecutionDisallowed)
                     {
                         if (acquiredJobKeysForNoConcurrentExec.Contains(jobKey))
                         {
@@ -1530,7 +1544,7 @@ namespace Quartz.Impl.MongoDB
 
                     IJobDetail job = bndle.JobDetail;
 
-                    if (job.ConcurrentExectionDisallowed)
+                    if (job.ConcurrentExecutionDisallowed)
                     {
                         var jobTriggers = this.GetTriggersForJob(job.Key);
                         IEnumerable<BsonDocument> triggerKeys = jobTriggers
@@ -1586,7 +1600,7 @@ namespace Quartz.Impl.MongoDB
                         Update.Set("JobDataMap", jobDetail.JobDataMap.ToBsonDocument()));
                 }
 
-                if (jobDetail.ConcurrentExectionDisallowed)
+                if (jobDetail.ConcurrentExecutionDisallowed)
                 {
                     IList<Spi.IOperableTrigger> jobTriggers = this.GetTriggersForJob(jobDetail.Key);
                     IEnumerable<BsonDocument> triggerKeys = jobTriggers.Select(t => t.Key.ToBsonDocument());
