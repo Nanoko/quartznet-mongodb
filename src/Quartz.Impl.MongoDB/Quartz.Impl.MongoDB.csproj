@@ -68,6 +68,7 @@
     <Compile Include="IdOrKeyConvention.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SetSerializer.cs" />
+    <Compile Include="TimeOfDaySerializer.cs" />
     <Compile Include="TimeZoneInfoSerializer.cs" />
     <Compile Include="TriggerKeySerializer.cs" />
   </ItemGroup>

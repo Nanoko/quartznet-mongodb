@@ -171,6 +171,8 @@ namespace Quartz.Impl.MongoDB
                 cm.SetIgnoreExtraElements(true);
             });
             
+            BsonSerializer.RegisterSerializer(typeof(TimeOfDay), new TimeOfDaySerializer());
+
             BsonClassMap.RegisterClassMap<DailyTimeIntervalTriggerImpl>(cm =>
             {
                 cm.AutoMap();
