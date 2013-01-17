@@ -27,6 +27,8 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 
+using AutoScout24.SMP.BackgroundServices.SmpJobs.Infrastructure.Quartz;
+
 using Common.Logging;
 
 using Quartz.Collection;
@@ -165,6 +167,7 @@ namespace Quartz.Impl.MongoDB
                 cm.AutoMap();
                 cm.MapField("nextFireTimeUtc");
                 cm.MapField("previousFireTimeUtc");
+                cm.MapField(x => x.TimeZone).SetSerializer(new TimeZoneInfoSerializer());
                 cm.SetIgnoreExtraElements(true);
             });
             
@@ -174,6 +177,7 @@ namespace Quartz.Impl.MongoDB
                 cm.MapField("complete");
                 cm.MapField("nextFireTimeUtc");
                 cm.MapField("previousFireTimeUtc");
+                cm.MapField(x => x.TimeZone).SetSerializer(new TimeZoneInfoSerializer());
                 cm.SetIgnoreExtraElements(true);
             });
 

@@ -1,17 +1,13 @@
-﻿using Machine.Specifications;
+﻿using System;
+
+using Machine.Specifications;
 namespace Quartz.Impl.MongoDB.Tests
 {
-    using System;
-    using System.Collections.Specialized;
-    using System.Diagnostics;
     using System.Linq;
-    using System.Threading;
-
-    using Common.Logging.Simple;
 
     using Quartz.Spi;
 
-    public class TriggerSpecs
+    public class DailyIntervalTriggerSpecs
     {
         public class When_a_daily_interval_trigger_has_been_stored_in_the_mongo_db
         {
@@ -19,9 +15,11 @@ namespace Quartz.Impl.MongoDB.Tests
                 {
                     jobStore = new JobStore();
                     jobStore.ClearAllSchedulingData();
+                    
+                    germanTimeZone = TimeZoneInfo.FindSystemTimeZoneById("W. Europe Standard Time");
                     trigger = TriggerBuilder.Create()
                         .ForJob(new JobKey("test"))
-                        .WithDailyTimeIntervalSchedule(x => x.OnEveryDay().StartingDailyAt(new TimeOfDay(10, 10)))
+                        .WithDailyTimeIntervalSchedule(x => x.InTimeZone(germanTimeZone).OnEveryDay().StartingDailyAt(new TimeOfDay(10, 10)))
                         .Build();
                     jobDetail = JobBuilder.Create<TestJob>().WithIdentity("test").Build();
                 };
@@ -34,19 +32,19 @@ namespace Quartz.Impl.MongoDB.Tests
                     triggersForJob.Count.ShouldEqual(1);
                 };
 
+            private It should_retrieve_the_correct_time_zone = () =>
+                {
+                    var trigger = (IDailyTimeIntervalTrigger)jobStore.GetTriggersForJob(new JobKey("test")).Single();
+                    trigger.TimeZone.ShouldEqual(germanTimeZone);
+                };
+
             private static JobStore jobStore;
 
             private static ITrigger trigger;
 
             private static IJobDetail jobDetail;
-        }
-    }
 
-    public class TestJob: IJob
-    {
-        public void Execute(IJobExecutionContext context)
-        {
-            throw new NotImplementedException();
+            private static TimeZoneInfo germanTimeZone;
         }
     }
 }
