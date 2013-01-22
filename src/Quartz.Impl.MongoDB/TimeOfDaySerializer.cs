@@ -5,9 +5,7 @@ using MongoDB.Bson.IO;
 using MongoDB.Bson.Serialization;
 using MongoDB.Bson.Serialization.Options;
 
-using Quartz;
-
-namespace AutoScout24.SMP.BackgroundServices.SmpJobs.Infrastructure.Quartz
+namespace Quartz.Impl.MongoDB
 {
     public class TimeOfDaySerializer : IBsonSerializer
     {
