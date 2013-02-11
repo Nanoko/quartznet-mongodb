@@ -31,6 +31,10 @@ Remember this will still need to set a valid connection string in web or app con
 	
 	IScheduler scheduler = new Quartz.Impl.StdSchedulerFactory(properties).GetScheduler();
 
+## Changes in version 1.3
+ + Updated NuGet dependencies to Quartz 2.1.2 and MongoCSharpDriver 1.7
+ + Fixes DailyIntervalTrigger serialization
+ 
 ## Changes in version 1.2
  + Updated NuGet dependencies to Quartz 2.0.1 and MongoCSharpDriver 1.5
 
