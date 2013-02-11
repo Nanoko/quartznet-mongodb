@@ -22,28 +22,19 @@
 
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Globalization;
 using System.Linq;
-using System.Text;
 using System.Threading;
-
-using AutoScout24.SMP.BackgroundServices.SmpJobs.Infrastructure.Quartz;
-
 using Common.Logging;
-
-using Quartz.Collection;
-using Quartz.Impl;
-using Quartz.Impl.Matchers;
-using Quartz.Spi;
-using System.Configuration;
-using MongoDB.Driver;
-using MongoDB.Bson.Serialization.Conventions;
-using MongoDB.Bson.Serialization;
-using Quartz.Impl.Triggers;
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization;
+using MongoDB.Bson.Serialization.Conventions;
+using MongoDB.Driver;
 using MongoDB.Driver.Builders;
-using Quartz.Impl.Calendar;
-using MongoDB.Bson.Serialization.Options;
+using Quartz.Impl.Matchers;
+using Quartz.Impl.Triggers;
+using Quartz.Spi;
 
 namespace Quartz.Impl.MongoDB
 {
