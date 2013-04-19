@@ -12,7 +12,7 @@ namespace Quartz.Impl.MongoDB
     {
         public object Deserialize(global::MongoDB.Bson.IO.BsonReader bsonReader, Type nominalType, Type actualType, IBsonSerializationOptions options)
         {
-            if (nominalType != typeof(JobDetailImpl) || actualType != typeof(JobDetailImpl))
+            if (!nominalType.IsAssignableFrom(typeof(JobDetailImpl)) || actualType != typeof(JobDetailImpl))
             {
                 var message = string.Format("Can't deserialize a {0} with {1}.", nominalType.FullName, this.GetType().Name);
                 throw new BsonSerializationException(message);
