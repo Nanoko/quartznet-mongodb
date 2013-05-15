@@ -70,6 +70,8 @@ namespace Quartz.Impl.MongoDB
         private MongoCollection BlockedJobs { get { return this.database.GetCollection(instanceName + ".BlockedJobs"); } }
         private MongoCollection Schedulers { get { return this.database.GetCollection(instanceName + ".Schedulers"); } }
 
+        public static string DefaultConnectionString { get; set; }
+
         /// <summary>
         /// Initializes a new instance of the <see cref="JobStore"/> class.
         /// </summary>
@@ -77,14 +79,19 @@ namespace Quartz.Impl.MongoDB
         {
             log = LogManager.GetLogger(GetType());
 
-            string connectionString = ConfigurationManager.ConnectionStrings["quartznet-mongodb"].ConnectionString;
+            string connectionString;
+
+            if( ConfigurationManager.ConnectionStrings["quartznet-mongodb"] != null )
+                connectionString = ConfigurationManager.ConnectionStrings["quartznet-mongodb"].ConnectionString;
+            else
+                connectionString = DefaultConnectionString;
 
             //
             // If there is no connection string to use then throw an 
             // exception to abort construction.
             //
 
-            if (connectionString.Length == 0)
+            if (string.IsNullOrWhiteSpace(connectionString))
                 throw new ApplicationException("Connection string is missing for the MongoDB job store.");
 
             lock (lockObject)
