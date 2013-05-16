@@ -148,6 +148,23 @@ namespace Quartz.Impl.MongoDB
             BsonClassMap.RegisterClassMap<AbstractTrigger>(cm =>
             {
                 cm.AutoMap();
+
+                cm.MapField( x => x.Name );
+                cm.MapField( x => x.Group );
+                cm.MapField( x => x.JobName );
+                cm.MapField( x => x.JobGroup );
+                cm.MapField( x => x.JobKey );
+                cm.MapField( x => x.Name );
+                cm.MapField( x => x.Group );
+                cm.MapField( x => x.Description );
+                cm.MapField( x => x.CalendarName );
+                cm.MapField( x => x.JobDataMap );
+                cm.MapField( x => x.MisfireInstruction );
+                cm.MapField( x => x.FireInstanceId );
+                cm.MapField( x => x.EndTimeUtc );
+                cm.MapField( x => x.StartTimeUtc );
+                cm.MapField( x => x.Priority );
+
                 cm.SetIsRootClass(true);
             });
 
@@ -160,14 +177,18 @@ namespace Quartz.Impl.MongoDB
                 cm.SetIgnoreExtraElements(true);
             });
 
-            BsonClassMap.RegisterClassMap<CronTriggerImpl>(cm =>
+            BsonClassMap.RegisterClassMap<CronTriggerImpl>( cm =>
             {
                 cm.AutoMap();
-                cm.MapField("nextFireTimeUtc");
-                cm.MapField("previousFireTimeUtc");
-                cm.MapField(x => x.TimeZone).SetSerializer(new TimeZoneInfoSerializer());
-                cm.SetIgnoreExtraElements(true);
-            });
+
+                cm.MapField( x => x.CronExpressionString );
+                cm.MapField( x => x.TimeZone );
+
+                cm.MapField( "nextFireTimeUtc" );
+                cm.MapField( "previousFireTimeUtc" );
+                cm.MapField( x => x.TimeZone ).SetSerializer( new TimeZoneInfoSerializer() );
+                cm.SetIgnoreExtraElements( true );
+            } );
             
             BsonSerializer.RegisterSerializer(typeof(TimeOfDay), new TimeOfDaySerializer());
 
