@@ -28,13 +28,12 @@ namespace Quartz.Impl.MongoDB
                 
                 Assembly assembly = Assembly.Load(bsonReader.ReadString("_assembly"));
                 Type jobType = assembly.GetType(bsonReader.ReadString("_class"));
-                
-                IJobDetail jobDetail = new JobDetailImpl(
-                    bsonReader.ReadString("Name"),
-                    bsonReader.ReadString("Group"),
-                    jobType,
-                    bsonReader.ReadBoolean("RequestRecovery"),
-                    bsonReader.ReadBoolean("Durable"));
+                string name = bsonReader.ReadString("Name");
+                string group = bsonReader.ReadString("Group");
+                bool requestRecovery = bsonReader.ReadBoolean("RequestRecovery");
+                bool durable = bsonReader.ReadBoolean("Durable");
+
+                IJobDetail jobDetail = new JobDetailImpl(name, group, jobType, durable, requestRecovery);
 
                 bsonReader.ReadBsonType();
                 JobDataMap map = (JobDataMap)BsonSerializer.Deserialize(bsonReader, typeof(JobDataMap));
