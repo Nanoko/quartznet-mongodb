@@ -105,9 +105,11 @@ namespace Quartz.Impl.MongoDB
         /// </summary>
         static JobStore()
         {
-            var myConventions = new ConventionProfile();
-            myConventions.SetIdMemberConvention(new IdOrKeyConvention());
-            BsonClassMap.RegisterConventions(
+            var myConventions = new ConventionPack();
+            var idConvention = new NamedIdMemberConvention("Id", "Key");
+            myConventions.Add(idConvention);
+            ConventionRegistry.Register(
+                "quartz-net-mongodb",
                 myConventions,
                 t => true
             );
