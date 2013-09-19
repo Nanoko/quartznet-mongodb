@@ -109,7 +109,7 @@ namespace Quartz.Impl.MongoDB
             myConventions.SetIdMemberConvention(new IdOrKeyConvention());
             BsonClassMap.RegisterConventions(
                 myConventions,
-                t => true
+                t => t.FullName.StartsWith("Quartz.")
             );
 
             BsonSerializer.RegisterSerializer(
