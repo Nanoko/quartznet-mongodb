@@ -25,7 +25,7 @@ namespace Quartz.Impl.MongoDB
         /// Initializes a new instance of the DateTimeSerializer class.
         /// </summary>
         public DateTimeOffsetSerializer()
-            : base(DateTimeSerializationOptions.Defaults)
+            : base(new DateTimeSerializationOptions())
         {
         }
 
@@ -62,7 +62,7 @@ namespace Quartz.Impl.MongoDB
             {
                 case BsonType.DateTime:
                     // use an intermediate BsonDateTime so MinValue and MaxValue are handled correctly
-                    value = BsonDateTime.Create(bsonReader.ReadDateTime()).Value;
+                    value = (new BsonDateTime(bsonReader.ReadDateTime())).ToUniversalTime();
                     break;
                 case BsonType.Document:
                     bsonReader.ReadStartDocument();

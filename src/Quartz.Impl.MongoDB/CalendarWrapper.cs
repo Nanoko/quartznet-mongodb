@@ -22,10 +22,8 @@ namespace Quartz.Impl.MongoDB
             
             bsonReader.ReadStartDocument();
             item.Name = bsonReader.ReadString("_id");
-            byte[] byteArray;
-            BsonBinarySubType binarySubType;
-            bsonReader.ReadBinaryData("ContentStream", out byteArray, out binarySubType);
-            item.Calendar = (ICalendar)new BinaryFormatter().Deserialize(new MemoryStream(byteArray));
+            var binaryData = bsonReader.ReadBinaryData("ContentStream");
+            item.Calendar = (ICalendar)new BinaryFormatter().Deserialize(new MemoryStream(binaryData.Bytes));
             bsonReader.ReadEndDocument();
             
             return item;
@@ -46,7 +44,7 @@ namespace Quartz.Impl.MongoDB
             bsonWriter.WriteString("_id", this.Name);
             MemoryStream stream = new MemoryStream();
             new BinaryFormatter().Serialize(stream, this.Calendar);
-            bsonWriter.WriteBinaryData("ContentStream", stream.ToArray(), BsonBinarySubType.Binary);
+            bsonWriter.WriteBinaryData("ContentStream", new BsonBinaryData(stream.ToArray(), BsonBinarySubType.Binary));
             bsonWriter.WriteEndDocument();
         }
 

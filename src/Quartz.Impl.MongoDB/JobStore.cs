@@ -96,7 +96,9 @@ namespace Quartz.Impl.MongoDB
 
             lock (lockObject)
             {
-                this.database = MongoDatabase.Create(connectionString);
+                var urlBuilder = new MongoUrlBuilder(connectionString);
+                var client = new MongoClient(urlBuilder.ToMongoUrl());
+                this.database = client.GetServer().GetDatabase(urlBuilder.DatabaseName);
             }
         }
 
@@ -105,9 +107,11 @@ namespace Quartz.Impl.MongoDB
         /// </summary>
         static JobStore()
         {
-            var myConventions = new ConventionProfile();
-            myConventions.SetIdMemberConvention(new IdOrKeyConvention());
-            BsonClassMap.RegisterConventions(
+            var myConventions = new ConventionPack();
+            var idConvention = new NamedIdMemberConvention("Id", "Key");
+            myConventions.Add(idConvention);
+            ConventionRegistry.Register(
+                "quartz-net-mongodb",
                 myConventions,
                 t => t.FullName.StartsWith("Quartz.")
             );
@@ -1401,10 +1405,10 @@ namespace Quartz.Impl.MongoDB
             lock (lockObject)
             {
                 // multiple instances management
-                this.Schedulers.Save(new BsonDocument(
-                    new BsonElement("_id", this.instanceId),
-                    new BsonElement("Expires", (SystemTime.Now() + new TimeSpan(0, 10, 0)).UtcDateTime),
-                    new BsonElement("State", "Running")));
+                this.Schedulers.Save(new BsonDocument()
+                    .SetElement(new BsonElement("_id", this.instanceId))
+                    .SetElement(new BsonElement("Expires", (SystemTime.Now() + new TimeSpan(0, 10, 0)).UtcDateTime))
+                    .SetElement(new BsonElement("State", "Running")));
 
                 this.Schedulers.Remove(
                     Query.LT("Expires", SystemTime.Now().UtcDateTime));
